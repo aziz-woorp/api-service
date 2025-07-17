@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "${APP_PORT:-8001}:${APP_PORT:-8001}"
+    environment:
+      - APP_ENV=development
+      - GIN_MODE=debug
+    env_file:
+      - ./env/.env
+    volumes:
+      - ./translation:/translation
+    restart: unless-stopped
+    develop:
+      watch:
+        - path: cmd/
+          action: rebuild
+        - path: internal/
+          action: rebuild
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:${APP_PORT:-8001}/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s

@@ -1,0 +1,17 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: bff-service
+  description: The Backend for frontend service
+  annotations:
+    gitlab.com/project-slug: 'tamara-backend/backend-services/bff-service'
+    backstage.io/linguist: 'https://gitlab.com/tamara-backend/backend-services/bff-service'
+  tags:
+    - go
+spec:
+  type: service
+  owner: consumer-platform-team-app-team-customer-engagement
+  lifecycle: production
+  consumesApis:
+    - api-jerk-service
+    - api-repayment

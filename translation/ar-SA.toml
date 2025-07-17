@@ -1,0 +1,638 @@
+[currency]
+SAR = "ر.س"
+AED = "د.إ"
+QAR = "ر.ق"
+BHD = "د.ب"
+KWD = "د.ك"
+
+[internal_server_error]
+title = ""
+message = "حدث خطأ ما"
+
+[invalid_request]
+title = ""
+message = "لا يمكننا معالجة طلبك في الوقت الحالي. الرجاء المحاولة لاحقًا"
+
+[notif_pay_early]
+message = "ادفع مسبقًا وحسن من سجلك الائتماني"
+
+[notif_late_payment]
+message = "الدفعات المتأخرة تأثر على سجلك الائتماني"
+
+[notif_incoming_statement_one_day]
+message = "بيتم إصدار الفاتورة التالية خلال يوم"
+
+[notif_incoming_statement_two_days]
+message = "بيتم إصدار الفاتورة التالية خلال يومين"
+
+[notif_incoming_statement]
+message = "بيتم إصدار الفاتورة في {{.Days}} أيام"
+
+[statement.subscription_fee.smart]
+title = "تمارا سمارت"
+subtitle = "رسوم العضوية"
+
+[statement.subscription_fee.smart_plus]
+title = "تمارا سمارت+"
+subtitle = "رسوم العضوية"
+
+[subscription.tier_name]
+smart = "سمارت"
+smart_plus = "سمارت+"
+
+[statement.payment_options.tags]
+NEW.text = "جديد"
+
+[statement.payment_options.pay_total]
+title = "ادفع الفاتورة"
+subtitle = "ادفع الفاتورة المستحقة لهذا الشهر"
+
+[statement.payment_options.partial_payment]
+title = "اختر وادفع"
+subtitle = "حدد الدفعات اللي ودك تسددها الحين"
+
+[statement.payment_options.pay_outstanding]
+title = "إجمالي المستحقات"
+subtitle = "ادفع كل الدفعات المستحقة على هذا الحساب"
+
+[statement.payment_options.opt_out_pay_outstanding]
+title = "ادفع إجمالي المستحقات"
+subtitle = "المبلغ الإجمالي يشمل كل المستحقات الحالية"
+
+[statement.payment_options.opt_in_pay_total]
+title = "ادفع الفاتورة المستحقة"
+subtitle = "سدد إجمالي الدفعات المتأخرة لإعادة تفعيل عضوية تمارا {{.TierName}}."
+
+[subscription.faqs]
+heading = "الأسئلة الشائعة"
+
+[subscription.faqs.smart.items_0]
+question = "وش هي تمارا سمارت؟"
+answer = """
+تمارا سمارت هي عضوية حصرية، بتساعدك في التحكم بمدفوعاتك بسهولة!
+
+استفيد من مزايا عضوية تمارا سمارت و يمكنك الإلغاء في أي وقت، من خلال رسوم شهرية بقيمة 19 {{.Currency}}. 
+
+كاش باك 1٪ 
+مع كل طلب من تمارا لك 1% كاش باك تصل الى 250 {{.Currency}} في الشهر.
+
+حماية المشتري
+تسوق وأنت متطمن، أمور طلباتك ومشاكلها علّي، تطبق الشروط والاحكام.
+
+هدايا لعملاء سمارت
+عروض وهدايا خاصة من متاجرك اللي تحبها.
+
+فاتورة شهرية
+كل دفعاتك بتاريخ سداد واحد، وتلقاها في فاتورتك الشهرية.
+
+رسوم المعالجة
+تسوق من أي مكان مع تمارا سمارت بدون رسوم معالجة.
+
+اشترك في تمارا سمارت، و ليك اول شهر مجانا.
+"""
+
+[subscription.faqs.smart.items_1]
+question = "كيف اسجل في تمارا سمارت؟"
+answer = """
+عشان تسجل في عضوية تمارا سمارت، اطلب من أي متجر في تمارا واتبع الخطوات التالية:
+
+1. في صفحة الدفع، اختر طريقة الدفع اللي تناسبك.
+2. اضغط على خيار تمارا سمارت لتفعيل العضوية.
+3. أكّد طلبك وبيتم تفعيل عضويتك في تمارا سمارت تلقائيًا. 
+"""
+
+[subscription.faqs.smart.items_2]
+question = "وش هي مميزات تمارا سمارت ؟"
+answer = """
+من المزايا اللي بتكون متاحة لك بعد التسجيل في عضوية تمارا سمارت:
+
+كاش باك 1٪ 
+مع كل طلب من تمارا لك 1% كاش باك تصل الى 250 {{.Currency}} في الشهر.
+
+حماية المشتري
+لوما وصلك طلبك، أو تواجه اشكالية في استرجاع المبلغ، أو لم يكن الطلب اللي استلمته كما كنت تتوقع، تسوق وأنت متطمن، أمور طلباتك ومشاكلها علّي، تطبق الشروط والاحكام.
+
+هدايا لعملاء سمارت
+كاش باك وهدايا خاصة من متاجرك اللي تحبها فقط لاعضاء تمارا سمارت
+
+فاتورة شهرية
+كل دفعاتك بتاريخ سداد واحد، وتلقاها في فاتورتك الشهرية، مستحقة الدفع في الأول من كل شهر.
+"""
+
+[subscription.faqs.smart.items_3]
+question = "وش معنى فاتورة شهرية مع تمارا سمارت؟"
+answer = """
+تمارا سمارت بتساعدك في ترتيب مدفوعاتك والتحكم فيها بسهولة.
+
+كل دفعاتك بتكون في تاريخ سداد واحد، وتلقاها في فاتورة شهرية.
+
+ويتم إصدار الفاتورة في تاريخ 25 من كل شهر  وعندك إلى يوم 1 من الشهر الجاي لسدادها.
+"""
+
+[subscription.faqs.smart.items_4]
+question = "كيف ألغي عضوية تمارا سمارت"
+answer = """
+ما ودنا نودعك، بس إذا كنت متأكد من قرارك في إلغاء تمارا سمارت، اتبع الخطوات التالية:
+
+1. من خلال تطبيق تمارا
+2. اضغط على "المزيد"
+3. اختر  "العضوية"
+4. من صفحة تمارا سمارت اضغط على "الغاء العضوية"
+
+يرجى الملاحظة:
+
+- لازم تدفع إجمالي المستحقات لإلغاء اشتراك تمارا سمارت.
+- بيتم إضافة رسوم الشهر الحالي إلى الفاتورة الصادرة في تاريخ 25، ولازم تدفع الفاتورة بمجرد إصدارها.
+- بعد إلغاء الاشتراك، مزايا تمارا سمارت بتكون متاحة لك حتى نهاية فترة الاشتراك. والفاتورة الشهرية بتوصلك حتى بعد الغاء العضوية.
+
+ودك تعرف أكثر؟ فضلًا تواصل مع فريقنا من خلال مركز المساعدة في التطبيق
+"""
+
+[subscription.faqs.smart_plus.items_0]
+question = "وش هي تمارا سمارت+؟"
+answer = """
+تمارا سمارت+ هي عضوية حصرية، بتساعدك في التحكم بمدفوعاتك بسهولة!
+
+مزايا تمارا سمارت+ متاحة لعملائنا في الإمارات من خلال رسوم شهرية بقيمة 49 {{.Currency}}، مع خيار الإلغاء في أي وقت.
+
+مزايا تمارا سمارت+:
+
+بطاقة تمارا
+ادفعها كاملة أو قسم دفعاتك لحد 4 دفعات، بأي وقت وأي مكان، سواء أونلاين أو داخل المحل.
+
+كاش باك
+بيجيك 1% كاش باك لكل طلب يصل إلى 250 {{.Currency}} شهريًا.
+
+حماية المشتري
+تسوق وبالك مرتاح، وخل مشاكل الطلبات علينا، تطبق الشروط والاحكام.
+
+عروض حصرية
+كاش باك وهدايا خاصة من متاجرك اللي تحبها.
+
+فاتورة شهرية
+كل دفعاتك بتاريخ سداد واحد، وتلقاها في فاتورتك الشهرية، مستحقة الدفع في الأول من كل شهر - الفاتورة الشهرية بتوصلك حتى بعد الغاء العضوية.
+
+رسوم المعالجة
+تسوق من أي مكان مع تمارا سمارت+ بدون رسوم معالجة.
+
+اشترك في تمارا سمارت+ الحين، أول شهر مجانًا، و بعدها برسوم شهرية بقيمة 49 {{.Currency}} ابتداءً  من فاتورتك الثا
+"""
+
+[subscription.faqs.smart_plus.items_1]
+question = "كيف اسجل في تمارا سمارت+؟"
+answer = """
+عشان تسجل في عضوية تمارا سمارت+ من خلال تطبيق تمارا، اتبع الخطوات التالية:
+
+1. سجل دخولك في تطبيق تمارا.
+2. اضغط على "استفيد من مزايا تمارا سمارت+".
+3. ستظهر كل مزايا عضوية تمارا سمارت+.
+4. اربط بطاقتك: اختر البطاقة التي ترغب بربطها ببطاقة تمارا الرقمية.
+5. فعل بطاقة تمارا: إذا لم يتم التحقق من هويتك، تابع التوجيهات ليتم التحقق.
+6. أضف اسمك  باللغة الانجليزية: تأكد أن اسمك المدخل يكون باللغة الانجليزية، إن لم يكن موجودًا.
+7. اضغط على "ابدأ الفترة التجريبية".
+"""
+
+[subscription.faqs.smart_plus.items_2]
+question = "وش هي مميزات تمارا سمارت+ ؟"
+answer = """
+من المزايا اللي بتكون متاحة لك بعد التسجيل في عضوية تمارا سمارت+:
+
+كاش باك 1٪  
+مع كل طلب من تمارا لك 1% كاش باك يصل إلى 250 {{.Currency}} شهريًا.
+
+حماية المشتري
+إذا طلبك ماوصل أو عندك مشكلة في الاسترجاع، ولا يهمك! تسوق وأنت متطمن وخل أمور طلباتك ومشاكلها علي، تطبق الشروط والاحكام.
+
+بطاقة تمارا
+ادفعها كاملة أو قسمها على 4 دفعات، بأي وقت وأي مكان، سواء أونلاين أو داخل المحل.
+
+عروض حصرية
+كاش باك وهدايا خاصة من متاجرك اللي تحبها فقط لاعضاء تمارا سمارت+.
+
+فاتورة شهرية
+كل دفعاتك بتاريخ سداد واحد، وتلقاها في فاتورتك الشهرية، مستحقة الدفع في الأول من كل شهر - - الفاتورة الشهرية بتوصلك حتى بعد الغاء العضوية.
+
+رسوم المعالجة
+تسوق من أي مكان مع تمارا سمارت+ بدون رسوم معالجة.
+"""
+
+[subscription.faqs.smart_plus.items_3]
+question = "وش معنى فاتورة شهرية مع تمارا سمارت+؟"
+answer = """
+تمارا سمارت+ بتساعدك في ترتيب مدفوعاتك والتحكم فيها بسهولة. 
+
+كل دفعاتك بتكون في تاريخ سداد واحد، وتلقاها في فاتورة شهرية. 
+
+ويتم إصدار الفاتورة في تاريخ 25 من كل شهر وعندك إلى يوم 1 من الشهر الجاي لسدادها.
+"""
+
+[subscription.faqs.smart_plus.items_4]
+question = "كيف ألغي عضوية تمارا سمارت+"
+answer = """
+ما ودنا نودعك، يمكنك الغاء اشتراك تمارا سمارت+ في أي وقت.
+
+بس إذا كنت متأكد من قرارك في إلغاء تمارا سمارت+، اتبع الخطوات التالية:
+
+1- من خلال تطبيق تمارا
+2- اضغط على "المزيد"
+3- اختر  "العضوية"
+4- من صفحة تمارا سمارت+ اضغط على "الغاء العضوية"
+
+لازم تدفع إجمالي المستحقات لإلغاء اشتراك تمارا سمارت+.
+
+بيتم إضافة رسوم الشهر الحالي إلى الفاتورة الصادرة في تاريخ 25، ولازم تدفع الفاتورة بمجرد إصدارها.
+
+يرجى الملاحظة، مزايا تمارا سمارت+ بتكون متاحة لك حتى نهاية فترة الاشتراك. والفاتورة الشهرية بتوصلك حتى بعد الغاء العضوية.
+
+ودك تعرف أكثر؟ فضلًا تواصل مع فريقنا من خلال مركز المساعدة في التطبيق.
+"""
+
+[subscription.faqs.smart_plus.items_5]
+question = "تمارا سمارت+ في السعودية"
+answer = """
+شكراً لاهتمامك في تمارا سمارت+
+
+للاسف العضوية متاحة حصريًا في الإمارات، تابعنا لمعرفة أخرى أخبارنا ومنتجاتنا الجديدة. 
+"""
+
+[extras.refund_info]
+title = "المبالغ المسترجعة في الفاتورة"
+subtitle = "إذا تم استرجاع المبلغ لاحقًا، لن يتم تحديث المبلغ في الفاتورة الحالية."
+
+[extras.statement_breakdown_info]
+statement_breakdown_title = "تفاصيل الفاتورة"
+previous_balance_title = "الدفعات المتأخرة"
+current_statement_title = "فواتير {{.Month}}"
+membership_fee_title = "رسوم الاشتراك" 
+refund_title = "المبلغ المسترجع"
+payment_received_title = "المبلغ المدفوع"
+remaining_balance_title = "الفاتورة المستحقة"
+
+[subscription.opt_out.feedback.smart.pages_0]
+title = "قبل ما تلغي عضويتك"
+subtitle = "ودنا نعرف أكثر عن سبب رغبتك في إلغاء العضوية في تمارا سمارت."
+
+[subscription.opt_out.feedback.smart_plus.pages_0]
+title = "قبل ما تلغي عضويتك"
+subtitle = "ودنا نعرف أكثر عن سبب رغبتك في إلغاء العضوية في تمارا سمارت+"
+
+[subscription.opt_out.feedback.pages_0.items_0]
+content = "المزايا ما تحمس"
+
+[subscription.opt_out.feedback.pages_0.items_1]
+content = "مبلغ العضوية غالي"
+
+[subscription.opt_out.feedback.pages_0.items_2]
+content = "سجلت في العضوية بالغلط"
+
+[subscription.opt_out.feedback.pages_0.items_3]
+content = "فقدت اهتمامي بالعضوية"
+
+[subscription.opt_out.feedback.pages_0.items_4]
+content = "أخرى"
+
+[subscription.opt_out.expired_benefits.smart]
+title = "متأكد من إلغاء العضوية؟"
+subtitle = "إذا ألغيت عضويتك في تمارا سمارت بتخسر المزايا الحصرية"
+tier_name = "تمارا سمارت"
+
+[subscription.opt_out.expired_benefits.smart_plus]
+title = "متأكد من إلغاء العضوية؟"
+subtitle = "إذا ألغيت عضويتك في تمارا سمارت بتخسر المزايا الحصرية"
+tier_name = "مزايا تمارا سمارت+"
+
+[subscription.opt_out.expired_benefits.items_smart_plus]
+title = "بطاقة تمارا"
+subtitle = "ادفعها كاملة أو قسمها على 4 دفعات، في أي وقت وأي مكان، أونلاين أو داخل المحل!"
+
+[subscription.opt_out.expired_benefits.items_0]
+title = "احصل على كاش باك حصري"
+subtitle = "احصل على 1% كاش باك  يصل إلى 250 {{.Currency}} شهريًا"
+
+[subscription.opt_out.expired_benefits.items_1]
+title = "بدون رسوم معالجة"
+subtitle = "ادفع إجمالي مبلغ طلبك فقط، بدون رسوم!"
+
+[subscription.opt_out.expired_benefits.items_2]
+title = "حماية المشتري"
+subtitle = "تسوق وبالك مرتاح، وخل مشاكل الطلبات علينا"
+
+[subscription.opt_out.expired_benefits.items_3]
+title = "هدايا حصرية"
+subtitle = "استفيد من العروض والهدايا من متاجرك المفضلة"
+
+[subscription.opt_out.expired_benefits.items_4]
+title = "فاتورة شهرية"
+subtitle = "تحكم بفواتيرك بسهولة من خلال فاتورة شهرية يتم إصدارها مرة كل شهر"
+
+[subscription.opt_out.changes.smart]
+title = "وش اللي يصير بعد إلغاء الاشتراك؟"
+subtitle = "جاري الغاء اشتراكك في تمارا سمارت، وهذي هي التغييرات:"
+
+[subscription.opt_out.changes.smart.items_0]
+title = "سدد إجمالي المستحقات"
+subtitle = "سدد إجمالي المستحقات قبل إلغاء العضوية، ولن يتم فرض أي رسوم بعد السداد."
+
+[subscription.opt_out.changes.smart.items_1]
+title = "تقدر تستمتع بالمزايا لنهاية الشهر"
+subtitle = "تقدر تستفيد من مزايا تمارا سمارت حتى تاريخ {{.Day}} {{.Month}} {{.Year}}."
+
+[subscription.opt_out.changes.smart.items_2]
+title = "فاتورتك الشهرية"
+subtitle = "استمتع بفاتورة شهرية يتم إصدارة في تاريخ 25 من كل شهر حتى بعد إلغاء الاشتراك"
+
+[subscription.opt_out.changes.smart_plus]
+title = "وش اللي بيصير بعد إلغاء الاشتراك؟"
+subtitle = "جاري الغاء اشتراكك في تمارا سمارت+، وهذي هي التغييرات:"
+
+[subscription.opt_out.changes.smart_plus.items_0]
+title = "سدد إجمالي المستحقات"
+subtitle = "سدد إجمالي المستحقات قبل إلغاء العضوية، ولن يتم فرض أي رسوم بعد السداد."
+
+[subscription.opt_out.changes.smart_plus.items_1]
+title = "مزاياك مستمرة"
+subtitle = "تقدر تستفيد من مزايا تمارا سمارت+ حتى تاريخ {{.Day}} {{.Month}} {{.Year}}."
+
+[subscription.opt_out.changes.smart_plus.items_2]
+title = "فاتورتك الشهرية"
+subtitle = "استمتع بفاتورة شهرية يتم إصدارة في تاريخ 25 من كل شهر حتى بعد إلغاء الاشتراك"
+
+[date.month]
+1 = "يناير"
+2 = "فبراير"
+3 = "مارس"
+4 = "ابريل"
+5 = "مايو"
+6 = "يونيو"
+7 = "يوليو"
+8 = "اغسطس"
+9 = "سبتمبر"
+10 = "اكتوبر"
+11 = "نوفمبر"
+12 = "ديسمبر"
+
+[subscription.onboarding_banner]
+title = "اكتشف سمارت"
+
+# onboarding stories for subscribed users
+[subscription.onboarding_stories.subscribed_users.items_0]
+title = "تحكم بدفعاتك بكل سهولة!"
+subtitle = "تابع وسدد دفعاتك بكل سهولة من خلال فاتورة شهرية. تصدر في تاريخ 25 من كل شهر، وتقدر تسددها حتى 1 من الشهر التالي."
+story_image_url_staging = "https://storage.googleapis.com/staging-bff-sg/onboarding_stories/Screen 1.png"
+story_image_url_production = "https://storage.googleapis.com/production-bff/onboarding_stories/Screen 1.png"
+logo_url_staging = "https://storage.googleapis.com/staging-bff-sg/logos/logos/logo-with-name-ar.svg"
+logo_url_production = "https://storage.googleapis.com/production-bff/logos/logos/logo-with-name-ar.svg"
+
+[subscription.onboarding_stories.subscribed_users.items_1]
+title = "%100 راحة بال"
+subtitle = "تسوق وبالك مرتاح، وخل مشاكل الطلبات علينا *تطبق الشروط والأحكام"
+story_image_url_staging = "https://storage.googleapis.com/staging-bff-sg/onboarding_stories/screen-2-AR.png"
+story_image_url_production = "https://storage.googleapis.com/production-bff/onboarding_stories/screen-2-AR.png"
+logo_url_staging = "https://storage.googleapis.com/staging-bff-sg/logos/logos/logo-with-name-ar.svg"
+logo_url_production = "https://storage.googleapis.com/production-bff/logos/logos/logo-with-name-ar.svg"
+
+[subscription.onboarding_stories.subscribed_users.items_2]
+title = "كاش باك وعروض"
+subtitle = "مع كل طلب من تمارا لك 1% كاش باك يصل إلى 250 {{.Currency}}"
+story_image_url_staging = "https://storage.googleapis.com/staging-bff-sg/onboarding_stories/screen-3.png"
+story_image_url_production = "https://storage.googleapis.com/production-bff/onboarding_stories/screen-3.png"
+logo_url_staging = "https://storage.googleapis.com/staging-bff-sg/logos/logos/logo-with-name-ar.svg"
+logo_url_production = "https://storage.googleapis.com/production-bff/logos/logos/logo-with-name-ar.svg"
+
+[subscription.onboarding_stories.subscribed_users.items_3]
+title = "ودع رسوم المعالجة!"
+subtitle = "تسوق من أي مكان بدون رسوم معالجة"
+story_image_url_staging = "https://storage.googleapis.com/staging-bff-sg/onboarding_stories/Screen 4.png"
+story_image_url_production = "https://storage.googleapis.com/production-bff/onboarding_stories/Screen 4.png"
+logo_url_staging = "https://storage.googleapis.com/staging-bff-sg/logos/logos/logo-with-name-ar.svg"
+logo_url_production = "https://storage.googleapis.com/production-bff/logos/logos/logo-with-name-ar.svg"
+
+[subscription.onboarding_stories.subscribed_users.items_4]
+title = "كل هذا بـ19 {{.Currency}} شهريًا بس!"
+subtitle = "استفيد من المزايا"
+cta_text = "اكتشف تمارا سمارت"
+story_image_url_staging = "https://storage.googleapis.com/staging-bff-sg/onboarding_stories/Screen 5.png" 
+story_image_url_production = "https://storage.googleapis.com/production-bff/onboarding_stories/Screen 5.png" 
+logo_url_staging = "https://storage.googleapis.com/staging-bff-sg/logos/logos/logo-with-name-ar.svg"
+logo_url_production = "https://storage.googleapis.com/production-bff/logos/logos/logo-with-name-ar.svg"
+
+# onboarding stories for non subscribed users
+[subscription.onboarding_stories.non_subscribed_users.items_0]
+title = "تحكم بدفعاتك بكل سهولة!"
+subtitle = "تابع وسدد دفعاتك بكل سهولة من خلال فاتورة شهرية. تصدر في تاريخ 25 من كل شهر، وتقدر تسددها حتى 1 من الشهر التالي."
+story_image_url_staging = "https://storage.googleapis.com/staging-bff-sg/onboarding_stories/Screen 1.png"
+story_image_url_production = "https://storage.googleapis.com/production-bff/onboarding_stories/Screen 1.png"
+logo_url_staging = "https://storage.googleapis.com/staging-bff-sg/logos/logos/logo-with-name-ar.svg"
+logo_url_production = "https://storage.googleapis.com/production-bff/logos/logos/logo-with-name-ar.svg"
+
+[subscription.onboarding_stories.non_subscribed_users.items_1]
+title = "%100 راحة بال"
+subtitle = "تسوق وبالك مرتاح، وخل مشاكل الطلبات علينا *تطبق الشروط والأحكام"
+story_image_url_staging = "https://storage.googleapis.com/staging-bff-sg/onboarding_stories/screen-2-AR.png"
+story_image_url_production = "https://storage.googleapis.com/production-bff/onboarding_stories/screen-2-AR.png"
+logo_url_staging = "https://storage.googleapis.com/staging-bff-sg/logos/logos/logo-with-name-ar.svg"
+logo_url_production = "https://storage.googleapis.com/production-bff/logos/logos/logo-with-name-ar.svg"
+
+[subscription.onboarding_stories.non_subscribed_users.items_2]
+title = "كاش باك وعروض"
+subtitle = "مع كل طلب من تمارا لك 1% كاش باك يصل إلى 250 {{.Currency}}"
+story_image_url_staging = "https://storage.googleapis.com/staging-bff-sg/onboarding_stories/screen-3.png"
+story_image_url_production = "https://storage.googleapis.com/production-bff/onboarding_stories/screen-3.png"
+logo_url_staging = "https://storage.googleapis.com/staging-bff-sg/logos/logos/logo-with-name-ar.svg"
+logo_url_production = "https://storage.googleapis.com/production-bff/logos/logos/logo-with-name-ar.svg"
+
+[subscription.onboarding_stories.non_subscribed_users.items_3]
+title = "ودع رسوم المعالجة!"
+subtitle = "تسوق من أي مكان بدون رسوم معالجة"
+story_image_url_staging = "https://storage.googleapis.com/staging-bff-sg/onboarding_stories/Screen 4.png"
+story_image_url_production = "https://storage.googleapis.com/production-bff/onboarding_stories/Screen 4.png"
+logo_url_staging = "https://storage.googleapis.com/staging-bff-sg/logos/logos/logo-with-name-ar.svg"
+logo_url_production = "https://storage.googleapis.com/production-bff/logos/logos/logo-with-name-ar.svg"
+
+[subscription.onboarding_stories.non_subscribed_users.items_4]
+title = "جرب تمارا سمارت مجانًا"
+subtitle = "بعدها رسوم بقيمة 19 {{.Currency}} شهريًا"
+cta_text = "فعل عضوية تمارا سمارت"
+story_image_url_staging = "https://storage.googleapis.com/staging-bff-sg/onboarding_stories/Screen 5.png"
+story_image_url_production = "https://storage.googleapis.com/production-bff/onboarding_stories/Screen 5.png"
+logo_url_staging = "https://storage.googleapis.com/staging-bff-sg/logos/logos/logo-with-name-ar.svg"
+logo_url_production = "https://storage.googleapis.com/production-bff/logos/logos/logo-with-name-ar.svg"
+
+# onboarding stories for non subscribed basic users
+[subscription.onboarding_stories.basic_users.items_0]
+title = "تحكم بدفعاتك بكل سهولة!"
+subtitle = "تابع وسدد دفعاتك بكل سهولة من خلال فاتورة شهرية. تصدر في تاريخ 25 من كل شهر، وتقدر تسددها حتى 1 من الشهر التالي."
+story_image_url_staging = "https://storage.googleapis.com/staging-bff-sg/onboarding_stories/Screen 1.png"
+story_image_url_production = "https://storage.googleapis.com/production-bff/onboarding_stories/Screen 1.png"
+logo_url_staging = "https://storage.googleapis.com/staging-bff-sg/logos/logos/logo-with-name-ar.svg"
+logo_url_production = "https://storage.googleapis.com/production-bff/logos/logos/logo-with-name-ar.svg"
+
+[subscription.onboarding_stories.basic_users.items_1]
+title = "%100 راحة بال"
+subtitle = "تسوق وبالك مرتاح، وخل مشاكل الطلبات علينا *تطبق الشروط والأحكام"
+story_image_url_staging = "https://storage.googleapis.com/staging-bff-sg/onboarding_stories/screen-2-AR.png"
+story_image_url_production = "https://storage.googleapis.com/production-bff/onboarding_stories/screen-2-AR.png"
+logo_url_staging = "https://storage.googleapis.com/staging-bff-sg/logos/logos/logo-with-name-ar.svg"
+logo_url_production = "https://storage.googleapis.com/production-bff/logos/logos/logo-with-name-ar.svg"
+
+[subscription.onboarding_stories.basic_users.items_2]
+title = "كاش باك وعروض"
+subtitle = "مع كل طلب من تمارا لك 1% كاش باك يصل إلى 250 {{.Currency}}"
+story_image_url_staging = "https://storage.googleapis.com/staging-bff-sg/onboarding_stories/screen-3.png"
+story_image_url_production = "https://storage.googleapis.com/production-bff/onboarding_stories/screen-3.png"
+logo_url_staging = "https://storage.googleapis.com/staging-bff-sg/logos/logos/logo-with-name-ar.svg"
+logo_url_production = "https://storage.googleapis.com/production-bff/logos/logos/logo-with-name-ar.svg"
+
+[subscription.onboarding_stories.basic_users.items_3]
+title = "ودع رسوم المعالجة!"
+subtitle = "تسوق من أي مكان بدون رسوم معالجة"
+story_image_url_staging = "https://storage.googleapis.com/staging-bff-sg/onboarding_stories/Screen 4.png"
+story_image_url_production = "https://storage.googleapis.com/production-bff/onboarding_stories/Screen 4.png"
+logo_url_staging = "https://storage.googleapis.com/staging-bff-sg/logos/logos/logo-with-name-ar.svg"
+logo_url_production = "https://storage.googleapis.com/production-bff/logos/logos/logo-with-name-ar.svg"
+
+[subscription.onboarding_stories.basic_users.items_4]
+title = "كل هذا بـ 19 {{.Currency}} شهريًا"
+subtitle = "فعل تمارا سمارت مرة ثانية واستفيد من المزايا!"
+cta_text = "فعل عضوية تمارا سمارت"
+story_image_url_staging = "https://storage.googleapis.com/staging-bff-sg/onboarding_stories/Screen 5.png"
+story_image_url_production = "https://storage.googleapis.com/production-bff/onboarding_stories/Screen 5.png"
+logo_url_staging = "https://storage.googleapis.com/staging-bff-sg/logos/logos/logo-with-name-ar.svg"
+logo_url_production = "https://storage.googleapis.com/production-bff/logos/logos/logo-with-name-ar.svg"
+
+[subscription.onboarding_stories.smart_plus_users.items_0]
+title = "مزايا أكثر"
+subtitle = "تمارا سمارت+ تقدم لك عروض حصرية وتجربة دفع مرنة وآمنة"
+story_image_url_staging = "https://storage.googleapis.com/staging-bff-sg/onboarding_stories_smart+/smart_plus_items_0.png"
+story_image_url_production = "https://storage.googleapis.com/production-bff/onboarding_stories_smart+/smart_plus_items_0.png"
+logo_url_staging = "https://storage.googleapis.com/staging-bff-sg/logos/logos/Smart_Plus_Logo_AR 1.svg"
+logo_url_production = "https://storage.googleapis.com/production-bff/logos/logos/Smart_Plus_Logo_AR 1.svg"
+
+[subscription.onboarding_stories.smart_plus_users.items_1]
+title = "استخدم بطاقة تمارا بأي مكان"
+subtitle = "بطاقة تمارا تتيح لك خيار ادفعها كاملة أو قسمها على 4 دفعات، بأي وقت وأي مكان، سواء أونلاين أو داخل المحل!"
+story_image_url_staging = "https://storage.googleapis.com/staging-bff-sg/onboarding_stories_smart+/smart_plus_items_1_ar.png"
+story_image_url_production = "https://storage.googleapis.com/production-bff/onboarding_stories_smart+/smart_plus_items_1_ar.png"
+logo_url_staging = "https://storage.googleapis.com/staging-bff-sg/logos/logos/Smart_Plus_Logo_AR 1.svg"
+logo_url_production = "https://storage.googleapis.com/production-bff/logos/logos/Smart_Plus_Logo_AR 1.svg"
+
+[subscription.onboarding_stories.smart_plus_users.items_2]
+title = "ادفع بطريقتك"
+subtitle = "اختر طريقة الدفع المناسبة مع بطاقة تمارا، ادفعها كاملة أو قسمها على 4 دفعات وتقدر تغيرها بأي وقت في التطبيق!"
+story_image_url_staging = "https://storage.googleapis.com/staging-bff-sg/onboarding_stories_smart+/smart_plus_items_2_ar.png"
+story_image_url_production = "https://storage.googleapis.com/production-bff/onboarding_stories_smart+/smart_plus_items_2_ar.png"
+logo_url_staging = "https://storage.googleapis.com/staging-bff-sg/logos/logos/Smart_Plus_Logo_AR 1.svg"
+logo_url_production = "https://storage.googleapis.com/production-bff/logos/logos/Smart_Plus_Logo_AR 1.svg"
+
+[subscription.onboarding_stories.smart_plus_users.items_3]
+title = "استفيد من العروض"
+subtitle = "احصل على 1% كاش باك حتى 250 {{.Currency}} شهريًا وعروض حصرية من متاجرك المفضلة."
+story_image_url_staging = "https://storage.googleapis.com/staging-bff-sg/onboarding_stories_smart+/smart_plus_items_3_ar.png"
+story_image_url_production = "https://storage.googleapis.com/production-bff/onboarding_stories_smart+/smart_plus_items_3_ar.png"
+logo_url_staging = "https://storage.googleapis.com/staging-bff-sg/logos/logos/Smart_Plus_Logo_AR 1.svg"
+logo_url_production = "https://storage.googleapis.com/production-bff/logos/logos/Smart_Plus_Logo_AR 1.svg"
+
+[subscription.onboarding_stories.smart_plus_users.items_4]
+title = "تجربة دفع أسهل"
+subtitle = "ادفع إجمالي طلبك فقط بدون رسوم معالجة، استفيد من حماية المشتري، تحكم بفواتيرك بسهولة مع الفاتورة الشهرية."
+story_image_url_staging = "https://storage.googleapis.com/staging-bff-sg/onboarding_stories_smart+/smart_plus_items_4.png"
+story_image_url_production = "https://storage.googleapis.com/production-bff/onboarding_stories_smart+/smart_plus_items_4.png"
+logo_url_staging = "https://storage.googleapis.com/staging-bff-sg/logos/logos/Smart_Plus_Logo_AR 1.svg"
+logo_url_production = "https://storage.googleapis.com/production-bff/logos/logos/Smart_Plus_Logo_AR 1.svg"
+
+[subscription.opt_in_reactivate.benefits.items_smart_plus]
+title = "بطاقة تمارا"
+subtitle = "ادفعها كاملة أو قسمها على 4 دفعات، في أي وقت وأي مكان، أونلاين أو داخل المحل!"
+
+[subscription.opt_in_reactivate.benefits.items_0]
+title = "كاش باك حصري"
+subtitle = "تسوق أكثر ووفر فلوسك! احصل على 1% كاش باك لكل طلب يصل إلى 250 {{.Currency}} شهريًا"
+
+[subscription.opt_in_reactivate.benefits.items_1]
+title = "بدون رسوم معالجة"
+subtitle = "ادفع إجمالي مبلغ طلبك فقط، بدون رسوم!"
+
+[subscription.opt_in_reactivate.benefits.items_2]
+title = "حماية المشتري"
+subtitle = "تسوق وبالك مرتاح، وخل مشاكل الطلبات علينا"
+
+[subscription.opt_in_reactivate.benefits.items_3]
+title = "هدايا حصرية"
+subtitle = "استفيد من العروض والهدايا من متاجرك المفضلة"
+
+[subscription.opt_in_reactivate.benefits.items_4]
+title = "فاتورة شهرية"
+subtitle = "تابع وسدد دفعاتك بكل سهولة من خلال فاتورة شهرية تصدر في 25 من كل شهر، وتقدر تسددها حتى 1."
+
+[subscription.opt_in_v1.smart]
+title = "سمارت"
+subtitle = "وفر حتى 250 {{.Currency}} شهريًا"
+cta_text = "فعل عضوية تمارا سمارت"
+cta_subtext = "كل هذا بـ 19 {{.Currency}} شهريًا إلغاء في أي وقت"
+
+[subscription.opt_in_v1.smart_plus]
+title = "سمارت+"
+subtitle = "استمتع بمزايا أكثر"
+cta_text = "فعل عضوية تمارا +سمارت"
+cta_subtext = "كل هذا بـ 49 {{.Currency}} شهريًا إلغاء في أي وقت"
+
+[subscription.opt_in_reactivate_v2.opt_in.eligible_users.smart]
+title = """
+<span style="color: #FFFFFF;">جرب مزايا تمارا سمارت لمدة شهر </span><span style="color: #FFDD72;">مجانًا</span><span style="color: #FFFFFF;">!</span>
+"""
+subtitle = ""
+cta_text = "فعّل الفترة التجريبية"
+cta_subtext = "كل هذا بـ 19 {{.Currency}} شهريًا إلغاء في أي وقت"
+
+[subscription.opt_in_reactivate_v2.opt_in.eligible_users.smart_plus]
+title = """
+<span style="color: #FFFFFF;">جرب فوائد تمارا + سمارت لمدة ثلاثة أشه </span><span style="color: #FFDD72;">مجانًا</span><span style="color: #FFFFFF;">!</span>
+"""
+subtitle = ""
+cta_text = "فعّل الفترة التجريبية"
+cta_subtext = "كل هذا بـ 49 {{.Currency}} شهريًا إلغاء في أي وقت"
+
+[subscription.opt_in_reactivate_v2.opt_in.non_eligible_users.smart]
+title = """
+<span style="color: #FFFFFF;">جرب مزايا تمارا سمارت لمدة شهر </span><span style="color: #FFDD72;">مجانًا</span><span style="color: #FFFFFF;">!</span>
+"""
+subtitle = "كل هذا بـ 19 {{.Currency}} شهريًا إلغاء في أي وقت"
+cta_text = "تسوق الحين"
+cta_subtext = "تسوق واطلب الحين عشان تتأكد من أهليتك للعضوية!"
+
+[subscription.opt_in_reactivate_v2.opt_in.non_eligible_users.smart_plus]
+title = """
+<span style="color: #FFFFFF;">جرب فوائد تمارا + سمارت لمدة ثلاثة أشه </span><span style="color: #FFDD72;">مجانًا</span><span style="color: #FFFFFF;">!</span>
+"""
+subtitle = "كل هذا بـ 49 {{.Currency}} شهريًا إلغاء في أي وقت"
+cta_text = "تسوق الحين"
+cta_subtext = "تسوق واطلب الحين عشان تتأكد من أهليتك للعضوية!"
+
+[subscription.opt_in_reactivate_v2.reactivate.smart]
+title = "وفر حتى 250 {{.Currency}} شهريًا"
+subtitle = ""
+cta_text = "فعل عضوية تمارا سمارت"
+cta_subtext = "كل هذا بـ 19 {{.Currency}} شهريًا إلغاء في أي وقت"
+
+[subscription.opt_in_reactivate_v2.reactivate.smart_plus]
+title = "استمتع بمزايا أكثر"
+subtitle = ""
+cta_text = "فعل عضوية تمارا +سمارت"
+cta_subtext = "كل هذا بـ 49 {{.Currency}} شهريًا إلغاء في أي وقت"
+
+[questionnaires]
+monthly_income = "كم يبلغ دخلك الشهري؟"
+
+[subscription.tiers.smart]
+tier_name = "تمارا سمارت"
+logo_with_name_url_staging = "https://storage.googleapis.com/staging-bff-sg/logos/pink_logos/Tamara Smart AR.svg"
+logo_with_name_url_production = "https://storage.googleapis.com/production-bff/logos/pink_logos/Tamara Smart AR.svg"
+logo_with_name_url_white_staging = "https://storage.googleapis.com/staging-bff-sg/logos/logos/logo-with-name-ar.svg"
+logo_with_name_url_white_production = "https://storage.googleapis.com/production-bff/logos/logos/logo-with-name-ar.svg"
+
+[subscription.tiers.smart_plus]
+tier_name = "تمارا سمارت+"
+logo_with_name_url_staging = "https://storage.googleapis.com/staging-bff-sg/logos/pink_logos/Tamara Smart_plus_Logo_AR 1.svg"
+logo_with_name_url_production = "https://storage.googleapis.com/production-bff/logos/pink_logos/Tamara Smart_plus_Logo_AR 1.svg"
+logo_with_name_url_white_staging = "https://storage.googleapis.com/staging-bff-sg/logos/logos/Smart_Plus_Logo_AR 1.svg"
+logo_with_name_url_white_production = "https://storage.googleapis.com/production-bff/logos/logos/Smart_Plus_Logo_AR 1.svg"
