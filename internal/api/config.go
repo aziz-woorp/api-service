@@ -1,83 +1,27 @@
 package api
 
 import (
-	"fmt"
-	"log/slog"
-	"net/http"
-
 	"github.com/gin-gonic/gin"
-	"github.com/example/api-service/internal/config"
-	"github.com/example/api-service/internal/repository"
-	"github.com/example/api-service/internal/api/handlers"
-	"github.com/example/api-service/internal/repository/repoimpl"
+	"go.uber.org/zap"
+	"go.mongodb.org/mongo-driver/mongo"
+
+	"github.com/fraiday-org/api-service/internal/api/middleware"
+	"github.com/fraiday-org/api-service/internal/api/routes"
+	"github.com/fraiday-org/api-service/internal/config"
 )
 
-type api struct {
-	cfg      *config.APIConfig
-	e        *gin.Engine
-	testRepo repository.TestRepository
-}
+func SetupRouter(cfg *config.Config, logger *zap.Logger, mongoClient *mongo.Client) *gin.Engine {
+	engine := gin.New()
 
-func NewAPI(e *gin.Engine, opts ...config.Func[config.APIConfig]) *api {
-	cfg, err := config.NewAPIConfig(opts...)
-	if err != nil {
-		slog.Error("Failed to create API config", "error", err)
-		cfg = &config.APIConfig{AppPort: "8080"} // fallback
-	}
+	// Middleware
+	engine.Use(middleware.RequestID())
+	engine.Use(middleware.Logger(logger))
+	engine.Use(middleware.Recovery(logger))
+	engine.Use(middleware.CORS())
+	engine.Use(middleware.ErrorHandler())
 
-	api := &api{
-		cfg: cfg,
-		e:   e,
-	}
+	// Register routes
+	routes.Register(engine, cfg, logger, mongoClient)
 
-	api.setupDefaultMiddlewares()
-	api.initHealthCheck()
-	api.initRepos()
-	api.initRoutes()
-
-	return api
-}
-
-func (a *api) Start() {
-	defer a.Stop()
-	err := a.e.Run(fmt.Sprintf(":%s", a.cfg.AppPort))
-	if err != nil {
-		slog.Error("Failed to start server", "error", err)
-	}
-}
-
-func (a *api) Stop() {
-	slog.Info("API server is shutting down...")
-}
-
-func (a *api) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	a.e.ServeHTTP(w, req)
-}
-
-func (a *api) setupDefaultMiddlewares() {
-	a.e.Use(gin.Recovery())
-	a.e.Use(gin.Logger())
-}
-
-func (a *api) initHealthCheck() {
-	healthHandler := handlers.NewHealthHandler()
-	a.e.GET("/health", healthHandler.Health)
-	a.e.GET("/ping", healthHandler.HealthSimple)
-}
-
-func (a *api) initRepos() {
-	// Initialize test repository
-	testRepo := repoimpl.NewTestRepository()
-	a.testRepo = testRepo
-}
-
-
-func (a *api) initRoutes() {
-	// Test routes group
-	testGroup := a.e.Group("/test")
-	{
-		testGroup.GET("/ping", func(c *gin.Context) {
-			c.JSON(200, gin.H{"message": "pong"})
-		})
-	}
+	return engine
 }
