@@ -1,30 +1,45 @@
-ARG GOLANG_VERSION=1.23
+# syntax=docker/dockerfile:1
 
-FROM golang:${GOLANG_VERSION} AS builder
+# --- Build Stage ---
+ARG SERVICE_NAME=api-service
+FROM golang:1.23-alpine AS builder
 
-ENV GOPRIVATE=gitlab.tamaratech.co/tamara-backend/shared-kernel/go \
-  CGO_ENABLED=0
+WORKDIR /app
 
-WORKDIR /src
+# Install git for go mod
+RUN apk add --no-cache git
 
-RUN mkdir -p -m 0700 ~/.ssh && \
-  ssh-keyscan gitlab.tamaratech.co >> ~/.ssh/known_hosts && \
-  git config --global url.ssh://git@gitlab.tamaratech.co/.insteadOf https://gitlab.tamaratech.co/
+# Copy go mod and sum files
+COPY go.mod go.sum ./
+RUN go mod download
 
-RUN --mount=type=ssh \
-  --mount=type=cache,target=/go/pkg/mod/ \
-  --mount=type=bind,source=go.sum,target=go.sum \
-  --mount=type=bind,source=go.mod,target=go.mod \
-  ssh -q -T git@gitlab.tamaratech.co 2>&1 | go mod download
+# Copy the source code
+COPY . .
 
-RUN --mount=type=cache,target=/go/pkg/mod/ \
-  --mount=type=cache,target=/root/.cache/go-build \
-  --mount=type=bind,target=. \
-  go build -ldflags "-s -w" -o /bin/api ./cmd/api
+# Build the binary for the specified service
+ARG SERVICE_NAME=api-service
+RUN CGO_ENABLED=0 GOOS=linux go build -o ${SERVICE_NAME} ./cmd/api/main.go
 
-FROM gcr.io/distroless/static-debian11
+# --- Final Stage ---
+FROM alpine:3.19
 
-COPY --from=builder /bin/api /api
-COPY /translation /translation
+WORKDIR /app
 
-CMD ["/api"]
+# Create non-root user
+RUN adduser -D -g '' appuser
+
+# Copy binary from builder
+ARG SERVICE_NAME=api-service
+COPY --from=builder /app/${SERVICE_NAME} .
+
+# Copy env file (default to .env.dev, can be overridden at build time)
+ARG ENV_FILE=env/.env.dev
+COPY ${ENV_FILE} .env
+
+# Expose port (default 8080, can be overridden by env)
+EXPOSE 8080
+
+USER appuser
+
+# Run the binary
+ENTRYPOINT ["./api-service"]

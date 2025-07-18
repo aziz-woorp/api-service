@@ -1,29 +1,70 @@
-version: '3.8'
+version: "3.9"
+
+x-service-defaults: &service-defaults
+  restart: unless-stopped
+  networks:
+    - fraiday-net
 
 services:
   api:
+    <<: *service-defaults
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        SERVICE_NAME: api-service
+        ENV_FILE: ${ENV_FILE:-env/.env.dev}
+    container_name: api-service
+    depends_on:
+      - mongo
     ports:
-      - "${APP_PORT:-8001}:${APP_PORT:-8001}"
-    environment:
-      - APP_ENV=development
-      - GIN_MODE=debug
+      - "${APP_PORT:-8080}:8080"
     env_file:
-      - ./env/.env
+      - ${ENV_FILE:-env/.env.dev}
+    environment:
+      - APP_PORT=${APP_PORT:-8080}
+      - APP_ENV=${APP_ENV:-development}
+      - GIN_MODE=${GIN_MODE:-debug}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - MONGO_URI=${MONGO_URI:-mongodb://mongo:27017/api_service_dev}
+    profiles: ["dev", "prod"]
+
+  mongo:
+    <<: *service-defaults
+    image: mongo:7.0
+    container_name: mongo
+    ports:
+      - "27017:27017"
     volumes:
-      - ./translation:/translation
-    restart: unless-stopped
-    develop:
-      watch:
-        - path: cmd/
-          action: rebuild
-        - path: internal/
-          action: rebuild
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:${APP_PORT:-8001}/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+      - mongo_data:/data/db
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=root
+      - MONGO_INITDB_ROOT_PASSWORD=example
+    profiles: ["dev", "prod"]
+
+  # Example for future microservice
+  # worker:
+  #   <<: *service-defaults
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  #     args:
+  #       SERVICE_NAME: worker-service
+  #       ENV_FILE: ${ENV_FILE:-env/.env.dev}
+  #   container_name: worker-service
+  #   depends_on:
+  #     - mongo
+  #   env_file:
+  #     - ${ENV_FILE:-env/.env.dev}
+  #   profiles: ["dev", "prod"]
+
+volumes:
+  mongo_data:
+
+networks:
+  fraiday-net:
+    driver: bridge
+
+# Usage:
+# For dev:  ENV_FILE=env/.env.dev docker compose --profile dev up --build
+# For prod: ENV_FILE=env/.env.prod docker compose --profile prod up --build

@@ -1,126 +1,54 @@
 package config
 
 import (
-	"log/slog"
-	"time"
+	"log"
+	"os"
+	"strconv"
 
-	"github.com/kelseyhightower/envconfig"
+	"github.com/joho/godotenv"
 )
 
-type (
-	APIConfig struct {
-		AppEnv          string        `default:"development" envconfig:"APP_ENV"`
-		AppPort         string        `default:"8080"        envconfig:"APP_PORT"`
-		AppName         string        `default:""            envconfig:"NEW_RELIC_APP_NAME"`
-		LogLevel        slog.Level    `default:"INFO"        envconfig:"LOG_LEVEL"`
-		TranslationsDir string        `default:"translation" envconfig:"APP_TRANSLATIONS_DIR"`
-		MaxRetries      int           `default:"2"           envconfig:"MAX_RETRIES"`
-		RetryWaitMin    time.Duration `default:"1s"          envconfig:"RETRY_WAIT_MIN"`
-		RetryWaitMax    time.Duration `default:"2s"          envconfig:"RETRY_WAIT_MAX"`
-	}
-
-	apiOptions struct{}
-)
-
-type Func[T any] func(*T) error
-
-func NewAPIConfig(opts ...Func[APIConfig]) (*APIConfig, error) {
-	cfg := &APIConfig{}
-
-	for _, opt := range opts {
-		if err := opt(cfg); err != nil {
-			return nil, err
-		}
-	}
-	return cfg, nil
+type Config struct {
+	AppPort   string
+	AppEnv    string
+	GinMode   string
+	LogLevel  string
+	MongoURI  string
 }
 
-// APIOptions contains all API options.
-var APIOptions apiOptions
+func LoadConfig() *Config {
+	// Load .env if present
+	_ = godotenv.Load(".env")
 
-// LoadConfig implements option pattern for loading config from environment.
-func (apiOptions) LoadConfig(prefix string) Func[APIConfig] {
-	return func(cfg *APIConfig) error {
-		c := &APIConfig{}
-
-		err := envconfig.Process(prefix, c)
-		if err != nil {
-			return err
-		}
-
-		var optFns []Func[APIConfig]
-
-		optFns = append(optFns, APIOptions.AppEnv(c.AppEnv))
-		optFns = append(optFns, APIOptions.AppPort(c.AppPort))
-		optFns = append(optFns, APIOptions.AppName(c.AppName))
-		optFns = append(optFns, APIOptions.LogLevel(c.LogLevel))
-		optFns = append(optFns, APIOptions.TranslationsDir(c.TranslationsDir))
-		optFns = append(optFns, APIOptions.MaxRetries(c.MaxRetries))
-		optFns = append(optFns, APIOptions.RetryWaitMin(c.RetryWaitMin))
-		optFns = append(optFns, APIOptions.RetryWaitMax(c.RetryWaitMax))
-
-		for _, fn := range optFns {
-			if err := fn(cfg); err != nil {
-				return err
-			}
-		}
-
-		return nil
+	cfg := &Config{
+		AppPort:  getEnv("APP_PORT", "8080"),
+		AppEnv:   getEnv("APP_ENV", "development"),
+		GinMode:  getEnv("GIN_MODE", "debug"),
+		LogLevel: getEnv("LOG_LEVEL", "INFO"),
+		MongoURI: getEnv("MONGO_URI", "mongodb://localhost:27017/api_service_dev"),
 	}
+
+	return cfg
 }
 
-func (apiOptions) AppEnv(env string) Func[APIConfig] {
-	return func(cfg *APIConfig) error {
-		cfg.AppEnv = env
-		return nil
+func getEnv(key, defaultVal string) string {
+	val := os.Getenv(key)
+	if val == "" {
+		return defaultVal
 	}
+	return val
 }
 
-func (apiOptions) AppPort(port string) Func[APIConfig] {
-	return func(cfg *APIConfig) error {
-		cfg.AppPort = port
-		return nil
+// Helper to get int envs
+func getEnvInt(key string, defaultVal int) int {
+	val := os.Getenv(key)
+	if val == "" {
+		return defaultVal
 	}
-}
-
-func (apiOptions) AppName(name string) Func[APIConfig] {
-	return func(cfg *APIConfig) error {
-		cfg.AppName = name
-		return nil
+	i, err := strconv.Atoi(val)
+	if err != nil {
+		log.Printf("Invalid int for %s: %v, using default %d", key, err, defaultVal)
+		return defaultVal
 	}
-}
-
-func (apiOptions) LogLevel(level slog.Level) Func[APIConfig] {
-	return func(cfg *APIConfig) error {
-		cfg.LogLevel = level
-		return nil
-	}
-}
-
-func (apiOptions) TranslationsDir(dir string) Func[APIConfig] {
-	return func(cfg *APIConfig) error {
-		cfg.TranslationsDir = dir
-		return nil
-	}
-}
-
-func (apiOptions) MaxRetries(nums int) Func[APIConfig] {
-	return func(cfg *APIConfig) error {
-		cfg.MaxRetries = nums
-		return nil
-	}
-}
-
-func (apiOptions) RetryWaitMin(d time.Duration) Func[APIConfig] {
-	return func(cfg *APIConfig) error {
-		cfg.RetryWaitMin = d
-		return nil
-	}
-}
-
-func (apiOptions) RetryWaitMax(d time.Duration) Func[APIConfig] {
-	return func(cfg *APIConfig) error {
-		cfg.RetryWaitMax = d
-		return nil
-	}
+	return i
 }
