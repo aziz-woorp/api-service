@@ -38,16 +38,16 @@ flowchart TD
       MDB[(MongoDB Instance)]
     end
 
-    U-->|HTTP Request|RQ
-    RQ-->|Passes through|MW
-    MW-->|Invokes|HD
-    HD-->|Business Logic|SRV
-    SRV-->|Data Access|REPO
-    REPO-->|CRUD|MDB
-    CFG-->|Env Vars|API
-    LOG-->|Logs|API
-    HD-->|Logs|LOG
-    MW-->|Logs|LOG
+    U -->|HTTP Request| RQ
+    RQ -->|Passes through| MW
+    MW -->|Invokes| HD
+    HD -->|Business Logic| SRV
+    SRV -->|Data Access| REPO
+    REPO -->|CRUD| MDB
+    CFG -->|Env Vars| API
+    LOG -->|Logs| API
+    HD -->|Logs| LOG
+    MW -->|Logs| LOG
 ```
 
 ---
