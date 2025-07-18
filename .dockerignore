@@ -1,0 +1,50 @@
+# Ignore version control
+.git
+.gitignore
+
+# Ignore editor and OS files
+.vscode
+.idea
+.DS_Store
+*.swp
+*.swo
+*~
+
+# Ignore documentation and test files
+docs/
+test/
+tests/
+*.md
+*.rst
+
+# Ignore logs and runtime data
+*.log
+logs/
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Ignore coverage and build artifacts
+coverage/
+*.coverprofile
+*.cov
+*.test
+*.prof
+bin/
+build/
+dist/
+
+# Ignore local environment and secrets
+.env
+.env.*
+.envrc
+.envrc.*
+.envrc.local
+
+# Ignore dependency directories
+vendor/
+
+# Ignore temporary files
+tmp/
+temp/
