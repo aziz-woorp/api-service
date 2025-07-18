@@ -1,137 +1,107 @@
-# API Service
+<p align="center">
+  <img src="https://img.shields.io/badge/Go-1.23-blue?logo=go" alt="Go 1.23" />
+  <img src="https://img.shields.io/badge/Gin-Framework-green?logo=go" alt="Gin" />
+  <img src="https://img.shields.io/badge/Docker-Ready-blue?logo=docker" alt="Docker" />
+  <img src="https://img.shields.io/badge/MongoDB-Repository-brightgreen?logo=mongodb" alt="MongoDB" />
+</p>
 
-A Go REST API service built with the Gin framework following clean architecture principles.
+<h1 align="center">🚀 Genie : AI Interactions </h1>
+<p align="center"><b>Go REST API based on Gin Web Framework</b></p>
 
-## Requirements
+---
 
-- Go 1.23+
-- Docker (optional)
-- Docker Compose (optional)
+> **Welcome!**  
+> This is your entry point to the API Service documentation.  
+> Use the navigation below to explore architecture, routes, middleware, setup, and more.
 
-## Installation
+---
 
-1. Clone the repository
-2. Install dependencies:
-   ```bash
-   go mod tidy
-   ```
+## 📚 Table of Contents
 
-## Running the Application
+| Section | Description |
+|---------|-------------|
+| 🏗️ [Architecture](docs/architecture.md) | Visual overview of the system and components |
+| 🛣️ [Routes](docs/routes.md) | All API endpoints, requests & responses |
+| 🧩 [Middleware](docs/middleware.md) | Middleware stack and usage |
+| ⚙️ [Setup](docs/setup.md) | How to set up and run the application |
+| 🧑‍💻 [Maintainer](docs/maintainer.md) | Code owner and contact |
+| 🔐 [Authentication](docs/auth.md) | Username/password authentication |
 
-### Local Development
+---
 
-```bash
-# Using environment variable
-APP_PORT=8001 go run cmd/api/main.go
+## ✨ Features
 
-# Or export the variable
-export APP_PORT=8001
-go run cmd/api/main.go
-```
+- **Gin Framework** for fast, idiomatic HTTP APIs
+- **Clean Architecture** for maintainability and testability
+- **Centralized Logging** with zap
+- **Robust Middleware**: Request ID, logging, recovery, CORS, error handler
+- **Health Endpoints**: `/health` (detailed), `/ping` (simple)
+- **MongoDB Data Layer**: Repository pattern, ready for business logic
+- **Environment-based Config**: `.env.dev` and `.env.prod`
+- **Docker & Compose**: Local and production orchestration
+- **Makefile**: Streamlined local development
 
-### Using Docker Compose
+---
 
-```bash
-# Build and run
-docker-compose up --build
+## 🚦 Quick Start
 
-# Run in detached mode
-docker-compose up -d --build
-
-# Watch mode (auto-rebuild on changes)
-docker-compose up --watch
-
-# View logs
-docker-compose logs -f
-
-# Stop
-docker-compose down
-```
-
-## Environment Variables
-
-Configuration is managed through environment variables. Create a `.env` file in the `env/` directory:
+> **Requirements:**  
+> Go 1.23+, Docker, Docker Compose, Make
 
 ```bash
-APP_PORT=8001
-APP_ENV=development
-GIN_MODE=debug
+# Clone the repo
+git clone https://github.com/fraiday-org/api-service.git
+
+# Build and run the API locally
+make build
+make run
+
+# Or use Docker Compose (modular, multi-service)
+ENV_FILE=env/.env.dev PROFILE=dev make docker-up
+
+# Stop all services
+make docker-down
+
+# Build Docker image for API only
+make docker-build
+
+# For more, see [Setup](docs/setup.md)
 ```
 
-### Available Environment Variables
+---
 
-- `APP_PORT`: Server port (default: 8080)
-- `APP_ENV`: Application environment (default: development)
-- `GIN_MODE`: Gin mode (debug/release/test)
-- `LOG_LEVEL`: Log level (default: INFO)
-- `APP_TRANSLATIONS_DIR`: Translations directory (default: translation)
+## 🗂️ Project Structure
 
-## Available Endpoints
-
-- `GET /health` - Detailed health check with system information
-- `GET /ping` - Simple health check
-- `GET /test/ping` - Test endpoint returning "pong"
-
-## Project Structure
+See the [Architecture](docs/architecture.md) doc for a full breakdown.
 
 ```
-cmd/
-├── api/
-│   └── main.go              # Application entry point
-internal/
-├── api/                     # API layer
-│   ├── handlers/            # HTTP handlers
-│   ├── middleware/          # HTTP middleware
-│   ├── routes/              # Route definitions
-│   ├── dto/                 # Data transfer objects
-│   └── config.go            # API server setup
-├── service/                 # Business logic layer
-├── repository/              # Data access layer
-├── models/                  # Data models/entities
-├── config/                  # Configuration
-│   └── api_config.go        # API configuration
-└── errors/                  # Error handling
-env/
-└── .env                     # Environment variables
-docker-compose.yml           # Docker Compose configuration
-Dockerfile                   # Docker build configuration
+cmd/            # Entrypoint
+internal/       # API, middleware, handlers, repository, models
+env/            # Environment configs
+Dockerfile      # Docker build
+docker-compose.yml
+Makefile
+docs/           # 📄 All documentation
 ```
 
-## Development Guidelines
+---
 
-### Adding New Features
+## 📝 Documentation
 
-1. **Handlers**: Create new handlers in `internal/api/handlers/`
-2. **Services**: Add business logic in `internal/service/`
-3. **Repositories**: Implement data access in `internal/repository/`
-4. **Models**: Define data structures in `internal/models/`
-5. **Routes**: Register new endpoints in `internal/api/config.go`
+- For a deep dive into the system, see the docs above or jump to:
+  - [Architecture](docs/architecture.md)
+  - [Routes](docs/routes.md)
+  - [Middleware](docs/middleware.md)
+  - [Setup](docs/setup.md)
+  - [Maintainer](docs/maintainer.md)
+  - [Authentication](docs/auth.md)
 
-### Clean Architecture Principles
+---
 
-- **Separation of Concerns**: Each layer has a specific responsibility
-- **Dependency Rule**: Dependencies point inward (handlers → services → repositories)
-- **Interface-based Design**: Use interfaces for loose coupling
-- **Testability**: Each layer can be tested independently
+## 🐳 Modular Docker & Compose
 
-## Example Health Response
+- **Dockerfile**: Multi-stage, supports build args for service name and env file.
+- **docker-compose.yml**: Modular, supports profiles, service defaults, and future microservices.
+- **Makefile**: Modular targets for build, run, lint, test, compose up/down, and per-service actions.
 
-```json
-{
-  "status": "healthy",
-  "time": "2024-01-01T12:00:00Z",
-  "version": "1.0.0",
-  "uptime": "5m30s",
-  "system": {
-    "go_version": "go1.23.7",
-    "num_cpu": 8,
-    "arch": "amd64",
-    "os": "linux"
-  },
-  "checks": {
-    "database": "ok",
-    "cache": "ok",
-    "service": "running"
-  }
-}
-```
+See [Setup](docs/setup.md) for full details and advanced usage.
