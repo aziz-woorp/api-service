@@ -31,7 +31,7 @@ flowchart TD
       SRV["Service Layer (future)"]
       REPO[Repository Layer]
       CFG[Config Loader]
-      LOG[Logger (zap)]
+      LOG["Logger (zap)"]
     end
 
     subgraph DB["MongoDB"]
