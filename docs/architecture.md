@@ -28,7 +28,7 @@ flowchart TD
       RQ[Request Router]
       MW[Middleware Stack]
       HD[Handlers]
-      SRV[Service Layer (future)]
+      SRV["Service Layer (future)"]
       REPO[Repository Layer]
       CFG[Config Loader]
       LOG[Logger (zap)]
