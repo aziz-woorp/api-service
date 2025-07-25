@@ -11,6 +11,7 @@ import (
 	"github.com/fraiday-org/api-service/internal/api/middleware"
 	"github.com/fraiday-org/api-service/internal/config"
 	"github.com/fraiday-org/api-service/internal/repository"
+	"github.com/fraiday-org/api-service/internal/service"
 )
 
 func Register(r *gin.Engine, cfg *config.Config, logger *zap.Logger, mongoClient *mongo.Client) {
@@ -31,4 +32,67 @@ func Register(r *gin.Engine, cfg *config.Config, logger *zap.Logger, mongoClient
 	healthHandler := handlers.NewHealthHandler(cfg, logger, mongoClient)
 	r.GET("/health", healthHandler.Health)
 	r.GET("/ping", healthHandler.Ping)
+
+	// Chat Messages
+	chatMsgRepo := repository.NewChatMessageRepository(db)
+	chatMsgService := service.NewChatMessageService(chatMsgRepo)
+	chatMsgHandler := handlers.NewChatMessageHandler(chatMsgService)
+
+	r.POST("/messages", chatMsgHandler.CreateMessage)
+	r.GET("/messages", chatMsgHandler.ListMessages)
+	r.PUT("/messages/:id", chatMsgHandler.UpdateMessage)
+	r.POST("/messages/bulk", chatMsgHandler.BulkCreateMessages)
+
+	// Chat Message Feedback
+	chatMsgFeedbackRepo := repository.NewChatMessageFeedbackRepository(db)
+	chatMsgFeedbackService := service.NewChatMessageFeedbackService(chatMsgFeedbackRepo)
+	chatMsgFeedbackHandler := handlers.NewChatMessageFeedbackHandler(chatMsgFeedbackService)
+
+	r.POST("/messages/:message_id/feedbacks", chatMsgFeedbackHandler.CreateFeedback)
+	r.GET("/messages/:message_id/feedbacks", chatMsgFeedbackHandler.ListFeedbacks)
+	r.PATCH("/messages/:message_id/feedbacks/:feedback_id", chatMsgFeedbackHandler.UpdateFeedback)
+
+	// Chat Sessions
+	chatSessionRepo := repository.NewChatSessionRepository(db)
+	chatSessionService := service.NewChatSessionService(chatSessionRepo)
+	chatSessionHandler := handlers.NewChatSessionHandler(chatSessionService)
+
+	r.POST("/sessions", chatSessionHandler.CreateSession)
+	r.GET("/sessions/:session_id", chatSessionHandler.GetSession)
+	r.GET("/sessions", chatSessionHandler.ListSessions)
+
+	// Chat Session Threads
+	chatSessionThreadRepo := repository.NewChatSessionThreadRepository(db)
+	chatSessionThreadService := service.NewChatSessionThreadService(chatSessionThreadRepo)
+	chatSessionThreadHandler := handlers.NewChatSessionThreadHandler(chatSessionThreadService)
+
+	r.POST("/sessions/:session_id/threads", chatSessionThreadHandler.CreateThread)
+	r.GET("/sessions/:session_id/threads", chatSessionThreadHandler.ListThreads)
+	r.GET("/sessions/:session_id/active_thread", chatSessionThreadHandler.GetActiveThread)
+	r.POST("/sessions/:session_id/close_thread", chatSessionThreadHandler.CloseThread)
+
+	// Chat Session Recap
+	chatSessionRecapRepo := repository.NewChatSessionRecapRepository(db)
+	chatSessionRecapService := service.NewChatSessionRecapService(chatSessionRecapRepo)
+	chatSessionRecapHandler := handlers.NewChatSessionRecapHandler(chatSessionRecapService)
+
+	r.POST("/sessions/:session_id/recap", chatSessionRecapHandler.GenerateRecap)
+	r.GET("/sessions/:session_id/recap", chatSessionRecapHandler.GetLatestRecap)
+
+	// Analytics
+	analyticsService := service.NewAnalyticsService()
+	analyticsHandler := handlers.NewAnalyticsHandler(analyticsService)
+
+	r.GET("/analytics/dashboard", analyticsHandler.GetDashboardMetrics)
+	r.GET("/analytics/bot-engagement", analyticsHandler.GetBotEngagementMetrics)
+	r.GET("/analytics/containment-rate", analyticsHandler.GetContainmentRateMetrics)
+
+	// Clients
+	clientRepo := repository.NewClientRepository(db)
+	clientService := service.NewClientService(clientRepo)
+	clientHandler := handlers.NewClientHandler(clientService)
+
+	r.POST("/clients", clientHandler.CreateClient)
+	r.GET("/clients", clientHandler.ListClients)
+	r.PUT("/clients/:client_id", clientHandler.UpdateClient)
 }
