@@ -4,9 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"os/signal"
+	"sync"
+	"syscall"
 	"time"
 
-	"github.com/hibiken/asynq"
+	amqp "github.com/rabbitmq/amqp091-go"
 	"go.uber.org/zap"
 	"github.com/fraiday-org/api-service/internal/service"
 )
@@ -17,75 +21,270 @@ const (
 	TypeEventProcessor    = "event_processor"
 )
 
-// TaskWorker wraps asynq.Server for task processing
+// TaskWorker wraps RabbitMQ connection for task processing
 type TaskWorker struct {
-	server         *asynq.Server
-	mux            *asynq.ServeMux
-	logger         *zap.Logger
-	webhookService *service.WebhookService
-	aiService      *service.AIService
+	conn            *amqp.Connection
+	channel         *amqp.Channel
+	logger          *zap.Logger
+	webhookService  *service.WebhookService
+	aiService       *service.AIService
 	databaseService *service.DatabaseService
+	queues          []string
+	concurrency     int
+	wg              sync.WaitGroup
+	ctx             context.Context
+	cancel          context.CancelFunc
 }
 
 // NewTaskWorker creates a new task worker
-func NewTaskWorker(redisAddr string, logger *zap.Logger, aiURL, aiToken string, databaseService *service.DatabaseService) *TaskWorker {
-	server := asynq.NewServer(
-		asynq.RedisClientOpt{Addr: redisAddr},
-		asynq.Config{
-			Concurrency: 10,
-			Queues: map[string]int{
-				"chat_workflow": 6,
-				"events":        3,
-				"default":       2,
-			},
-			RetryDelayFunc: func(n int, e error, t *asynq.Task) time.Duration {
-				return time.Duration(n) * time.Second
-			},
-		},
-	)
+func NewTaskWorker(rabbitMQURL string, logger *zap.Logger, aiURL, aiToken string, databaseService *service.DatabaseService) (*TaskWorker, error) {
+	conn, err := amqp.Dial(rabbitMQURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to RabbitMQ: %w", err)
+	}
 
-	mux := asynq.NewServeMux()
+	channel, err := conn.Channel()
+	if err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("failed to open channel: %w", err)
+	}
+
+	// Set QoS to control how many messages are processed concurrently
+	err = channel.Qos(
+		1,     // prefetch count
+		0,     // prefetch size
+		false, // global
+	)
+	if err != nil {
+		channel.Close()
+		conn.Close()
+		return nil, fmt.Errorf("failed to set QoS: %w", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+
 	webhookService := service.NewWebhookService(logger)
 	aiService := service.NewAIService(logger, aiURL, aiToken)
 
 	return &TaskWorker{
-		server:         server,
-		mux:            mux,
-		logger:         logger,
-		webhookService: webhookService,
-		aiService:      aiService,
+		conn:            conn,
+		channel:         channel,
+		logger:          logger,
+		webhookService:  webhookService,
+		aiService:       aiService,
 		databaseService: databaseService,
-	}
+		queues:          []string{"chat_workflow", "events", "default"},
+		concurrency:     10,
+		ctx:             ctx,
+		cancel:          cancel,
+	}, nil
 }
 
-// RegisterHandlers registers task handlers
-func (tw *TaskWorker) RegisterHandlers() {
-	tw.mux.HandleFunc(TypeChatWorkflow, tw.HandleChatWorkflow)
-	tw.mux.HandleFunc(TypeSuggestionWorkflow, tw.HandleSuggestionWorkflow)
-	tw.mux.HandleFunc(TypeEventProcessor, tw.HandleEventProcessor)
+// SetQueues sets the queues to process
+func (tw *TaskWorker) SetQueues(queues []string) {
+	tw.queues = queues
+}
 
+// SetConcurrency sets the concurrency level
+func (tw *TaskWorker) SetConcurrency(concurrency int) {
+	tw.concurrency = concurrency
+}
+
+// declareQueues declares all required queues
+func (tw *TaskWorker) declareQueues() error {
+	for _, queue := range tw.queues {
+		_, err := tw.channel.QueueDeclare(
+			queue, // name
+			true,  // durable
+			false, // delete when unused
+			false, // exclusive
+			false, // no-wait
+			nil,   // arguments
+		)
+		if err != nil {
+			return fmt.Errorf("failed to declare queue %s: %w", queue, err)
+		}
+	}
+	return nil
 }
 
 // Start starts the task worker
 func (tw *TaskWorker) Start() error {
-	tw.RegisterHandlers()
-	tw.logger.Info("Starting task worker")
-	return tw.server.Run(tw.mux)
+	tw.logger.Info("Starting task worker", 
+		zap.Strings("queues", tw.queues),
+		zap.Int("concurrency", tw.concurrency))
+
+	// Declare queues
+	if err := tw.declareQueues(); err != nil {
+		return fmt.Errorf("failed to declare queues: %w", err)
+	}
+
+	// Start consumers for each queue
+	for _, queue := range tw.queues {
+		for i := 0; i < tw.concurrency; i++ {
+			tw.wg.Add(1)
+			go tw.consumeQueue(queue, i)
+		}
+	}
+
+	// Handle shutdown signals
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+
+	select {
+	case <-c:
+		tw.logger.Info("Shutdown signal received")
+		tw.Stop()
+	case <-tw.ctx.Done():
+		tw.logger.Info("Context cancelled")
+	}
+
+	tw.wg.Wait()
+	tw.logger.Info("Task worker stopped")
+	return nil
 }
 
 // Stop stops the task worker
 func (tw *TaskWorker) Stop() {
 	tw.logger.Info("Stopping task worker")
-	tw.server.Stop()
-	tw.server.Shutdown()
+	tw.cancel()
+	if tw.channel != nil {
+		tw.channel.Close()
+	}
+	if tw.conn != nil {
+		tw.conn.Close()
+	}
+}
+
+// consumeQueue consumes messages from a specific queue
+func (tw *TaskWorker) consumeQueue(queueName string, workerID int) {
+	defer tw.wg.Done()
+
+	msgs, err := tw.channel.Consume(
+		queueName, // queue
+		"",        // consumer
+		false,     // auto-ack
+		false,     // exclusive
+		false,     // no-local
+		false,     // no-wait
+		nil,       // args
+	)
+	if err != nil {
+		tw.logger.Error("Failed to register consumer", 
+			zap.String("queue", queueName),
+			zap.Int("worker_id", workerID),
+			zap.Error(err))
+		return
+	}
+
+	tw.logger.Info("Worker started", 
+		zap.String("queue", queueName),
+		zap.Int("worker_id", workerID))
+
+	for {
+		select {
+		case <-tw.ctx.Done():
+			tw.logger.Info("Worker stopping", 
+				zap.String("queue", queueName),
+				zap.Int("worker_id", workerID))
+			return
+		case msg, ok := <-msgs:
+			if !ok {
+				tw.logger.Info("Message channel closed", 
+					zap.String("queue", queueName),
+					zap.Int("worker_id", workerID))
+				return
+			}
+
+			tw.processMessage(msg, queueName, workerID)
+		}
+	}
+}
+
+// processMessage processes a single message
+func (tw *TaskWorker) processMessage(msg amqp.Delivery, queueName string, workerID int) {
+	start := time.Now()
+
+	// Parse Celery message format
+	var celeryMsg map[string]interface{}
+	if err := json.Unmarshal(msg.Body, &celeryMsg); err != nil {
+		tw.logger.Error("Failed to unmarshal message", 
+			zap.String("queue", queueName),
+			zap.Int("worker_id", workerID),
+			zap.Error(err))
+		msg.Nack(false, false) // Don't requeue malformed messages
+		return
+	}
+
+	taskType, ok := celeryMsg["task"].(string)
+	if !ok {
+		tw.logger.Error("Missing or invalid task type", 
+			zap.String("queue", queueName),
+			zap.Int("worker_id", workerID))
+		msg.Nack(false, false)
+		return
+	}
+
+	taskID, _ := celeryMsg["id"].(string)
+	kwargs, _ := celeryMsg["kwargs"].(map[string]interface{})
+
+	tw.logger.Info("Processing task", 
+		zap.String("task_id", taskID),
+		zap.String("task_type", taskType),
+		zap.String("queue", queueName),
+		zap.Int("worker_id", workerID))
+
+	// Process the task
+	err := tw.handleTask(tw.ctx, taskType, kwargs)
+
+	if err != nil {
+		tw.logger.Error("Task processing failed", 
+			zap.String("task_id", taskID),
+			zap.String("task_type", taskType),
+			zap.Duration("duration", time.Since(start)),
+			zap.Error(err))
+		
+		// Check retry count
+		retries, _ := celeryMsg["retries"].(float64)
+		if retries < 3 { // Max 3 retries
+			msg.Nack(false, true) // Requeue for retry
+		} else {
+			msg.Nack(false, false) // Don't requeue, send to DLQ
+		}
+	} else {
+		tw.logger.Info("Task completed successfully", 
+			zap.String("task_id", taskID),
+			zap.String("task_type", taskType),
+			zap.Duration("duration", time.Since(start)))
+		msg.Ack(false)
+	}
+}
+
+// handleTask routes tasks to appropriate handlers
+func (tw *TaskWorker) handleTask(ctx context.Context, taskType string, kwargs map[string]interface{}) error {
+	switch taskType {
+	case TypeChatWorkflow:
+		return tw.HandleChatWorkflow(ctx, kwargs)
+	case TypeSuggestionWorkflow:
+		return tw.HandleSuggestionWorkflow(ctx, kwargs)
+	case TypeEventProcessor:
+		return tw.HandleEventProcessor(ctx, kwargs)
+	default:
+		return fmt.Errorf("unknown task type: %s", taskType)
+	}
 }
 
 // HandleChatWorkflow handles chat workflow tasks
-func (tw *TaskWorker) HandleChatWorkflow(ctx context.Context, t *asynq.Task) error {
+func (tw *TaskWorker) HandleChatWorkflow(ctx context.Context, kwargs map[string]interface{}) error {
+	// Parse payload
+	payloadBytes, err := json.Marshal(kwargs)
+	if err != nil {
+		return fmt.Errorf("failed to marshal kwargs: %w", err)
+	}
+
 	var payload ChatWorkflowPayload
-	if err := json.Unmarshal(t.Payload(), &payload); err != nil {
-		tw.logger.Error("Failed to unmarshal chat workflow payload", zap.Error(err))
-		return fmt.Errorf("failed to unmarshal payload: %w", err)
+	if err := json.Unmarshal(payloadBytes, &payload); err != nil {
+		return fmt.Errorf("failed to unmarshal chat workflow payload: %w", err)
 	}
 
 	tw.logger.Info("Processing chat workflow task",
@@ -200,11 +399,16 @@ func (tw *TaskWorker) HandleChatWorkflow(ctx context.Context, t *asynq.Task) err
 }
 
 // HandleSuggestionWorkflow handles suggestion workflow tasks
-func (tw *TaskWorker) HandleSuggestionWorkflow(ctx context.Context, t *asynq.Task) error {
+func (tw *TaskWorker) HandleSuggestionWorkflow(ctx context.Context, kwargs map[string]interface{}) error {
+	// Parse payload
+	payloadBytes, err := json.Marshal(kwargs)
+	if err != nil {
+		return fmt.Errorf("failed to marshal kwargs: %w", err)
+	}
+
 	var payload SuggestionWorkflowPayload
-	if err := json.Unmarshal(t.Payload(), &payload); err != nil {
-		tw.logger.Error("Failed to unmarshal suggestion workflow payload", zap.Error(err))
-		return fmt.Errorf("failed to unmarshal payload: %w", err)
+	if err := json.Unmarshal(payloadBytes, &payload); err != nil {
+		return fmt.Errorf("failed to unmarshal suggestion workflow payload: %w", err)
 	}
 
 	tw.logger.Info("Processing suggestion workflow task",
@@ -228,11 +432,16 @@ func (tw *TaskWorker) HandleSuggestionWorkflow(ctx context.Context, t *asynq.Tas
 }
 
 // HandleEventProcessor handles event processor tasks
-func (tw *TaskWorker) HandleEventProcessor(ctx context.Context, t *asynq.Task) error {
+func (tw *TaskWorker) HandleEventProcessor(ctx context.Context, kwargs map[string]interface{}) error {
+	// Parse payload
+	payloadBytes, err := json.Marshal(kwargs)
+	if err != nil {
+		return fmt.Errorf("failed to marshal kwargs: %w", err)
+	}
+
 	var payload EventProcessorPayload
-	if err := json.Unmarshal(t.Payload(), &payload); err != nil {
-		tw.logger.Error("Failed to unmarshal event processor payload", zap.Error(err))
-		return fmt.Errorf("failed to unmarshal payload: %w", err)
+	if err := json.Unmarshal(payloadBytes, &payload); err != nil {
+		return fmt.Errorf("failed to unmarshal event processor payload: %w", err)
 	}
 
 	tw.logger.Info("Processing event processor task",

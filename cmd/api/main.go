@@ -90,8 +90,8 @@ func runWorker(cfg *config.Config, logger *zap.Logger, mongoClient *mongo.Client
 		logger.Fatal("Queue name is required for worker mode")
 	}
 
-	// Build Redis URL from config
-	redisURL := buildRedisURL(cfg)
+	// Build RabbitMQ URL from config
+	rabbitMQURL := cfg.GetRabbitMQURL()
 
 	// Parse queue names (comma-separated)
 	queues := strings.Split(queueName, ",")
@@ -102,13 +102,20 @@ func runWorker(cfg *config.Config, logger *zap.Logger, mongoClient *mongo.Client
 	logger.Info("Starting worker", 
 		zap.Strings("queues", queues), 
 		zap.Int("concurrency", concurrency),
-		zap.String("redis_url", redisURL))
+		zap.String("rabbitmq_url", rabbitMQURL))
 
 	// Initialize database service
 	databaseService := service.NewDatabaseService(logger, mongoClient, "api_service")
 	
 	// Initialize task worker
-	taskWorker := tasks.NewTaskWorker(redisURL, logger, cfg.AIServiceURL, cfg.SlackAIToken, databaseService)
+	taskWorker, err := tasks.NewTaskWorker(rabbitMQURL, logger, cfg.AIServiceURL, cfg.SlackAIToken, databaseService)
+	if err != nil {
+		logger.Fatal("Failed to create task worker", zap.Error(err))
+	}
+
+	// Set queues and concurrency
+	taskWorker.SetQueues(queues)
+	taskWorker.SetConcurrency(concurrency)
 
 	// Handle shutdown signals
 	c := make(chan os.Signal, 1)
@@ -128,13 +135,9 @@ func runWorker(cfg *config.Config, logger *zap.Logger, mongoClient *mongo.Client
 	logger.Info("Worker stopped")
 }
 
-// buildRedisURL constructs a Redis URL from config components
+// buildRedisURL is kept for backward compatibility but deprecated
+// Use cfg.GetRabbitMQURL() instead for new implementations
 func buildRedisURL(cfg *config.Config) string {
-	// If we have a broker URL (for Celery compatibility), use it
-	if cfg.CeleryBrokerURL != "" {
-		return cfg.CeleryBrokerURL
-	}
-
 	// Build from individual components
 	host := cfg.RedisHost
 	if host == "" {

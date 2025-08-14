@@ -4,29 +4,81 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
-	"github.com/hibiken/asynq"
+	amqp "github.com/rabbitmq/amqp091-go"
 	"go.uber.org/zap"
 )
 
-// TaskClient wraps asynq.Client for task enqueueing
+// TaskClient wraps RabbitMQ connection for task enqueueing
 type TaskClient struct {
-	client *asynq.Client
-	logger *zap.Logger
+	conn    *amqp.Connection
+	channel *amqp.Channel
+	logger  *zap.Logger
 }
 
 // NewTaskClient creates a new task client
-func NewTaskClient(redisAddr string, logger *zap.Logger) *TaskClient {
-	client := asynq.NewClient(asynq.RedisClientOpt{Addr: redisAddr})
-	return &TaskClient{
-		client: client,
-		logger: logger,
+func NewTaskClient(rabbitMQURL string, logger *zap.Logger) (*TaskClient, error) {
+	conn, err := amqp.Dial(rabbitMQURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to RabbitMQ: %w", err)
 	}
+
+	channel, err := conn.Channel()
+	if err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("failed to open channel: %w", err)
+	}
+
+	client := &TaskClient{
+		conn:    conn,
+		channel: channel,
+		logger:  logger,
+	}
+
+	// Declare queues
+	if err := client.declareQueues(); err != nil {
+		client.Close()
+		return nil, fmt.Errorf("failed to declare queues: %w", err)
+	}
+
+	return client, nil
+}
+
+// declareQueues declares all required queues
+func (tc *TaskClient) declareQueues() error {
+	queues := []string{
+		"chat_workflow",
+		"events",
+		"default",
+	}
+
+	for _, queue := range queues {
+		_, err := tc.channel.QueueDeclare(
+			queue, // name
+			true,  // durable
+			false, // delete when unused
+			false, // exclusive
+			false, // no-wait
+			nil,   // arguments
+		)
+		if err != nil {
+			return fmt.Errorf("failed to declare queue %s: %w", queue, err)
+		}
+	}
+
+	return nil
 }
 
 // Close closes the task client
 func (tc *TaskClient) Close() error {
-	return tc.client.Close()
+	if tc.channel != nil {
+		tc.channel.Close()
+	}
+	if tc.conn != nil {
+		return tc.conn.Close()
+	}
+	return nil
 }
 
 // ChatWorkflowPayload represents the payload for chat workflow tasks
@@ -51,7 +103,56 @@ type EventProcessorPayload struct {
 	Data       map[string]interface{} `json:"data"`
 }
 
+// publishTask publishes a task to the specified queue
+func (tc *TaskClient) publishTask(ctx context.Context, queueName, taskType string, payload interface{}) error {
+	// Create message with Celery-compatible format
+	message := map[string]interface{}{
+		"id":      fmt.Sprintf("%d", time.Now().UnixNano()),
+		"task":    taskType,
+		"args":    []interface{}{},
+		"kwargs":  payload,
+		"retries": 0,
+		"eta":     nil,
+		"expires": nil,
+	}
 
+	messageBytes, err := json.Marshal(message)
+	if err != nil {
+		return fmt.Errorf("failed to marshal message: %w", err)
+	}
+
+	err = tc.channel.PublishWithContext(
+		ctx,
+		"",        // exchange
+		queueName, // routing key
+		false,     // mandatory
+		false,     // immediate
+		amqp.Publishing{
+			ContentType:  "application/json",
+			DeliveryMode: amqp.Persistent, // make message persistent
+			Body:         messageBytes,
+			Headers: amqp.Table{
+				"task": taskType,
+				"id":   message["id"],
+			},
+		},
+	)
+
+	if err != nil {
+		tc.logger.Error("Failed to publish task", 
+			zap.String("queue", queueName),
+			zap.String("task_type", taskType),
+			zap.Error(err))
+		return fmt.Errorf("failed to publish task: %w", err)
+	}
+
+	tc.logger.Info("Published task",
+		zap.String("task_id", message["id"].(string)),
+		zap.String("queue", queueName),
+		zap.String("task_type", taskType))
+
+	return nil
+}
 
 // EnqueueChatWorkflow enqueues a chat workflow task
 func (tc *TaskClient) EnqueueChatWorkflow(ctx context.Context, messageID, sessionID string) error {
@@ -60,23 +161,7 @@ func (tc *TaskClient) EnqueueChatWorkflow(ctx context.Context, messageID, sessio
 		SessionID: sessionID,
 	}
 
-	payloadBytes, err := json.Marshal(payload)
-	if err != nil {
-		return fmt.Errorf("failed to marshal chat workflow payload: %w", err)
-	}
-
-	task := asynq.NewTask(TypeChatWorkflow, payloadBytes)
-	info, err := tc.client.Enqueue(task, asynq.Queue("chat_workflow"))
-	if err != nil {
-		tc.logger.Error("Failed to enqueue chat workflow task", zap.Error(err))
-		return err
-	}
-
-	tc.logger.Info("Enqueued chat workflow task",
-		zap.String("task_id", info.ID),
-		zap.String("message_id", messageID),
-		zap.String("session_id", sessionID))
-	return nil
+	return tc.publishTask(ctx, "chat_workflow", TypeChatWorkflow, payload)
 }
 
 // EnqueueSuggestionWorkflow enqueues a suggestion workflow task
@@ -86,23 +171,7 @@ func (tc *TaskClient) EnqueueSuggestionWorkflow(ctx context.Context, messageID, 
 		SessionID: sessionID,
 	}
 
-	payloadBytes, err := json.Marshal(payload)
-	if err != nil {
-		return fmt.Errorf("failed to marshal suggestion workflow payload: %w", err)
-	}
-
-	task := asynq.NewTask(TypeSuggestionWorkflow, payloadBytes)
-	info, err := tc.client.Enqueue(task, asynq.Queue("chat_workflow"))
-	if err != nil {
-		tc.logger.Error("Failed to enqueue suggestion workflow task", zap.Error(err))
-		return err
-	}
-
-	tc.logger.Info("Enqueued suggestion workflow task",
-		zap.String("task_id", info.ID),
-		zap.String("message_id", messageID),
-		zap.String("session_id", sessionID))
-	return nil
+	return tc.publishTask(ctx, "chat_workflow", TypeSuggestionWorkflow, payload)
 }
 
 // EnqueueEventProcessor enqueues an event processor task
@@ -115,21 +184,5 @@ func (tc *TaskClient) EnqueueEventProcessor(ctx context.Context, eventID, eventT
 		Data:       data,
 	}
 
-	payloadBytes, err := json.Marshal(payload)
-	if err != nil {
-		return fmt.Errorf("failed to marshal event processor payload: %w", err)
-	}
-
-	task := asynq.NewTask(TypeEventProcessor, payloadBytes)
-	info, err := tc.client.Enqueue(task, asynq.Queue("events"))
-	if err != nil {
-		tc.logger.Error("Failed to enqueue event processor task", zap.Error(err))
-		return err
-	}
-
-	tc.logger.Info("Enqueued event processor task",
-		zap.String("task_id", info.ID),
-		zap.String("event_id", eventID),
-		zap.String("event_type", eventType))
-	return nil
+	return tc.publishTask(ctx, "events", TypeEventProcessor, payload)
 }

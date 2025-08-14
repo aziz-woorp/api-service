@@ -21,8 +21,14 @@ type Config struct {
 	// Database
 	MongoURI string
 
-	// Celery/Queue settings
+	// RabbitMQ/Queue settings
 	CeleryBrokerURL    string
+	RabbitMQURL        string
+	RabbitMQHost       string
+	RabbitMQPort       int
+	RabbitMQUser       string
+	RabbitMQPassword   string
+	RabbitMQVHost      string
 	CeleryDefaultQueue string
 	CeleryEventsQueue  string
 
@@ -62,8 +68,14 @@ func LoadConfig() *Config {
 		// Database
 		MongoURI: getEnv("MONGODB_URI", "mongodb://localhost:27017/api_service_dev"),
 
-		// Celery/Queue settings
+		// RabbitMQ/Queue settings
 		CeleryBrokerURL:    getEnv("CELERY_BROKER_URL", ""),
+		RabbitMQURL:        getEnv("RABBITMQ_URL", ""),
+		RabbitMQHost:       getEnv("RABBITMQ_HOST", "localhost"),
+		RabbitMQPort:       getEnvInt("RABBITMQ_PORT", 5672),
+		RabbitMQUser:       getEnv("RABBITMQ_USER", "guest"),
+		RabbitMQPassword:   getEnv("RABBITMQ_PASSWORD", "guest"),
+		RabbitMQVHost:      getEnv("RABBITMQ_VHOST", "/"),
 		CeleryDefaultQueue: getEnv("CELERY_DEFAULT_QUEUE", "chat_workflow"),
 		CeleryEventsQueue:  getEnv("CELERY_EVENTS_QUEUE", "events"),
 
@@ -91,15 +103,16 @@ func LoadConfig() *Config {
 	return cfg
 }
 
-// GetRedisURL generates Redis URL from components if CELERY_BROKER_URL is not provided
-func (c *Config) GetRedisURL() string {
+// GetRabbitMQURL generates RabbitMQ URL from components if RABBITMQ_URL is not provided
+func (c *Config) GetRabbitMQURL() string {
+	// Use CeleryBrokerURL if available (for compatibility with Python backend)
 	if c.CeleryBrokerURL != "" {
 		return c.CeleryBrokerURL
 	}
-	if c.RedisPassword != "" {
-		return fmt.Sprintf("rediss://default:%s@%s:%d/%d", c.RedisPassword, c.RedisHost, c.RedisPort, c.RedisDB)
+	if c.RabbitMQURL != "" {
+		return c.RabbitMQURL
 	}
-	return fmt.Sprintf("redis://%s:%d/%d", c.RedisHost, c.RedisPort, c.RedisDB)
+	return fmt.Sprintf("amqp://%s:%s@%s:%d%s", c.RabbitMQUser, c.RabbitMQPassword, c.RabbitMQHost, c.RabbitMQPort, c.RabbitMQVHost)
 }
 
 func getEnv(key, defaultVal string) string {
