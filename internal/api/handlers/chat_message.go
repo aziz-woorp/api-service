@@ -4,13 +4,14 @@ package handlers
 import (
 	"net/http"
 
-	"github.com/gin-gonic/gin"
+	"strconv"
+
 	"github.com/fraiday-org/api-service/internal/api/dto"
 	"github.com/fraiday-org/api-service/internal/models"
 	"github.com/fraiday-org/api-service/internal/service"
+	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
-	"strconv"
 )
 
 // ChatMessageHandler provides HTTP handlers for chat messages.

@@ -42,4 +42,6 @@ EXPOSE 8080
 USER appuser
 
 # Run the binary
+# Default to server mode, but allow worker mode via CMD override
 ENTRYPOINT ["./api-service"]
+CMD ["server"]

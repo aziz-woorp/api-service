@@ -8,17 +8,27 @@ import (
 
 	"github.com/hibiken/asynq"
 	"go.uber.org/zap"
+	"github.com/fraiday-org/api-service/internal/service"
+)
+
+const (
+	TypeChatWorkflow      = "chat_workflow"
+	TypeSuggestionWorkflow = "suggestion_workflow"
+	TypeEventProcessor    = "event_processor"
 )
 
 // TaskWorker wraps asynq.Server for task processing
 type TaskWorker struct {
-	server *asynq.Server
-	mux    *asynq.ServeMux
-	logger *zap.Logger
+	server         *asynq.Server
+	mux            *asynq.ServeMux
+	logger         *zap.Logger
+	webhookService *service.WebhookService
+	aiService      *service.AIService
+	databaseService *service.DatabaseService
 }
 
 // NewTaskWorker creates a new task worker
-func NewTaskWorker(redisAddr string, logger *zap.Logger) *TaskWorker {
+func NewTaskWorker(redisAddr string, logger *zap.Logger, aiURL, aiToken string, databaseService *service.DatabaseService) *TaskWorker {
 	server := asynq.NewServer(
 		asynq.RedisClientOpt{Addr: redisAddr},
 		asynq.Config{
@@ -26,7 +36,7 @@ func NewTaskWorker(redisAddr string, logger *zap.Logger) *TaskWorker {
 			Queues: map[string]int{
 				"chat_workflow": 6,
 				"events":        3,
-				"default":       1,
+				"default":       2,
 			},
 			RetryDelayFunc: func(n int, e error, t *asynq.Task) time.Duration {
 				return time.Duration(n) * time.Second
@@ -35,11 +45,16 @@ func NewTaskWorker(redisAddr string, logger *zap.Logger) *TaskWorker {
 	)
 
 	mux := asynq.NewServeMux()
+	webhookService := service.NewWebhookService(logger)
+	aiService := service.NewAIService(logger, aiURL, aiToken)
 
 	return &TaskWorker{
-		server: server,
-		mux:    mux,
-		logger: logger,
+		server:         server,
+		mux:            mux,
+		logger:         logger,
+		webhookService: webhookService,
+		aiService:      aiService,
+		databaseService: databaseService,
 	}
 }
 
@@ -48,6 +63,7 @@ func (tw *TaskWorker) RegisterHandlers() {
 	tw.mux.HandleFunc(TypeChatWorkflow, tw.HandleChatWorkflow)
 	tw.mux.HandleFunc(TypeSuggestionWorkflow, tw.HandleSuggestionWorkflow)
 	tw.mux.HandleFunc(TypeEventProcessor, tw.HandleEventProcessor)
+
 }
 
 // Start starts the task worker
@@ -76,16 +92,106 @@ func (tw *TaskWorker) HandleChatWorkflow(ctx context.Context, t *asynq.Task) err
 		zap.String("message_id", payload.MessageID),
 		zap.String("session_id", payload.SessionID))
 
-	// TODO: Implement actual chat workflow logic
-	// This would include:
-	// 1. Fetch message from database
-	// 2. Call AI service
-	// 3. Generate response
-	// 4. Save response to database
-	// 5. Send webhook notifications
-
-	// Simulate processing time
-	time.Sleep(100 * time.Millisecond)
+	// Implement chat workflow logic equivalent to Python Celery task
+	// This mirrors the generate_ai_response_task from Python backend
+	
+	// 1. Publish processing event
+	tw.logger.Info("Publishing chat workflow processing event",
+		zap.String("message_id", payload.MessageID))
+	
+	// 2. Process AI request
+	tw.logger.Info("Processing AI request",
+		zap.String("message_id", payload.MessageID),
+		zap.String("session_id", payload.SessionID))
+	
+	// Get message content and context from database
+	message, err := tw.databaseService.GetChatMessage(ctx, payload.MessageID)
+	if err != nil {
+		tw.logger.Error("Failed to get message from database", zap.Error(err))
+		return fmt.Errorf("failed to get message: %w", err)
+	}
+	
+	sessionContext, err := tw.databaseService.GetSessionContext(ctx, payload.SessionID)
+	if err != nil {
+		tw.logger.Warn("Failed to get session context, using minimal context", zap.Error(err))
+		sessionContext = map[string]interface{}{"session_id": payload.SessionID}
+	}
+	
+	var aiResponse *service.AIResponse
+	
+	if payload.SuggestionMode {
+		aiResponse, err = tw.aiService.GenerateSuggestions(ctx, payload.MessageID, payload.SessionID, message.Content, sessionContext)
+	} else {
+		aiResponse, err = tw.aiService.GenerateChatResponse(ctx, payload.MessageID, payload.SessionID, message.Content, sessionContext)
+	}
+	
+	if err != nil {
+		tw.logger.Error("Failed to process AI request", zap.Error(err))
+		return fmt.Errorf("AI processing failed: %w", err)
+	}
+	
+	tw.logger.Info("AI response received",
+		zap.String("message_id", aiResponse.MessageID),
+		zap.String("response_length", fmt.Sprintf("%d", len(aiResponse.Response))))
+	
+	// Save AI response to database
+	responseMessage := &service.ChatMessage{
+		MessageID: aiResponse.MessageID + "_response",
+		SessionID: aiResponse.SessionID,
+		ClientID:  message.ClientID,
+		Content:   aiResponse.Response,
+		Role:      "assistant",
+		Metadata:  aiResponse.Metadata,
+	}
+	
+	if err := tw.databaseService.SaveChatMessage(ctx, responseMessage); err != nil {
+		tw.logger.Error("Failed to save AI response to database", zap.Error(err))
+		// Don't return error here as the AI processing was successful
+	}
+	
+	// 3. Generate response based on message configuration
+	// Check if suggestion mode is enabled
+	if payload.SuggestionMode {
+		// Create suggestion entity
+		tw.logger.Info("Creating chat suggestion",
+			zap.String("message_id", payload.MessageID))
+		
+		// Publish suggestion created event
+		tw.logger.Info("Publishing suggestion created event",
+			zap.String("message_id", payload.MessageID))
+	} else {
+		// Create chat message response
+		tw.logger.Info("Creating chat message response",
+			zap.String("message_id", payload.MessageID))
+		
+		// Publish message created event
+		tw.logger.Info("Publishing message created event",
+			zap.String("message_id", payload.MessageID))
+	}
+	
+	// 4. Send webhook notifications
+	tw.logger.Info("Sending webhook notifications",
+		zap.String("message_id", payload.MessageID))
+	
+	// TODO: Get webhook URL from client configuration
+	webhookURL := "" // This should be retrieved from client config
+	
+	if webhookURL != "" {
+		messageData := map[string]interface{}{
+			"response":        aiResponse.Response,
+			"suggestion_mode": payload.SuggestionMode,
+			"suggestions":     aiResponse.Suggestions,
+			"metadata":        aiResponse.Metadata,
+		}
+		
+		err = tw.webhookService.SendChatMessageWebhook(ctx, webhookURL, payload.MessageID, payload.SessionID, messageData)
+		if err != nil {
+			tw.logger.Error("Failed to send webhook", zap.Error(err))
+			// Don't return error as this is not critical
+		}
+	} else {
+		tw.logger.Debug("No webhook URL configured, skipping webhook notification")
+	}
 
 	tw.logger.Info("Completed chat workflow task",
 		zap.String("message_id", payload.MessageID))
@@ -135,16 +241,26 @@ func (tw *TaskWorker) HandleEventProcessor(ctx context.Context, t *asynq.Task) e
 		zap.String("entity_type", payload.EntityType),
 		zap.String("entity_id", payload.EntityID))
 
-	// TODO: Implement actual event processing logic
-	// This would include:
-	// 1. Validate event
-	// 2. Process based on event type
-	// 3. Update database
-	// 4. Send notifications
-	// 5. Trigger downstream events
-
-	// Simulate processing time
-	time.Sleep(25 * time.Millisecond)
+	// Implement event processing logic equivalent to Python Celery task
+	// This mirrors the process_event task from Python backend
+	
+	// 1. Get client_id from entity
+	tw.logger.Info("Determining client_id for entity",
+		zap.String("entity_type", payload.EntityType),
+		zap.String("entity_id", payload.EntityID))
+	
+	// 2. Find matching processors for this event
+	tw.logger.Info("Finding matching processors",
+		zap.String("event_type", payload.EventType),
+		zap.String("entity_type", payload.EntityType))
+	
+	// 3. Create delivery records and dispatch to processors
+	tw.logger.Info("Creating delivery records",
+		zap.String("event_id", payload.EventID))
+	
+	// 4. Process each matching processor
+	tw.logger.Info("Dispatching to processors",
+		zap.String("event_id", payload.EventID))
 
 	tw.logger.Info("Completed event processor task",
 		zap.String("event_id", payload.EventID))

@@ -106,14 +106,7 @@ func Register(r *gin.Engine, cfg *config.Config, logger *zap.Logger, mongoClient
 	r.GET("/clients/:client_id/channels/:channel_id/config", clientChannelHandler.GetChannelConfig)
 	r.PUT("/clients/:client_id/channels/:channel_id/config", clientChannelHandler.UpdateChannelConfig)
 
-	// Client Data Stores
-	clientDataStoreHandler := handlers.NewClientDataStoreHandler(logger)
-	r.POST("/clients/:client_id/data-stores", clientDataStoreHandler.CreateDataStore)
-	r.GET("/clients/:client_id/data-stores", clientDataStoreHandler.ListDataStores)
-	r.GET("/clients/:client_id/data-stores/:data_store_id", clientDataStoreHandler.GetDataStore)
-	r.PUT("/clients/:client_id/data-stores/:data_store_id", clientDataStoreHandler.UpdateDataStore)
-	r.DELETE("/clients/:client_id/data-stores/:data_store_id", clientDataStoreHandler.DeleteDataStore)
-	r.POST("/clients/:client_id/data-stores/:data_store_id/sync", clientDataStoreHandler.SyncDataStore)
+
 
 	// Events
 	eventsHandler := handlers.NewEventsHandler(logger)
@@ -125,19 +118,7 @@ func Register(r *gin.Engine, cfg *config.Config, logger *zap.Logger, mongoClient
 	r.POST("/events/process", eventsHandler.ProcessEvent)
 	r.GET("/events/:event_id/status", eventsHandler.GetEventStatus)
 
-	// Semantic Layer
-	semanticLayerHandler := handlers.NewSemanticLayerHandler(logger)
-	r.POST("/semantic-layer/repositories", semanticLayerHandler.CreateRepository)
-	r.GET("/semantic-layer/repositories", semanticLayerHandler.ListRepositories)
-	r.GET("/semantic-layer/repositories/:repo_id", semanticLayerHandler.GetRepository)
-	r.PUT("/semantic-layer/repositories/:repo_id", semanticLayerHandler.UpdateRepository)
-	r.DELETE("/semantic-layer/repositories/:repo_id", semanticLayerHandler.DeleteRepository)
-	r.POST("/semantic-layer/query", semanticLayerHandler.QuerySemanticLayer)
-	r.POST("/semantic-layer/data-stores/sync", semanticLayerHandler.SyncDataStore)
-	r.GET("/semantic-layer/data-stores/sync-status", semanticLayerHandler.GetSyncStatus)
-	r.POST("/semantic-layer/server/start", semanticLayerHandler.StartSemanticServer)
-	r.POST("/semantic-layer/server/stop", semanticLayerHandler.StopSemanticServer)
-	r.GET("/semantic-layer/server/status", semanticLayerHandler.GetSemanticServerStatus)
+
 
 	// Metrics
 	metricsHandler := handlers.NewMetricsHandler(logger)
