@@ -95,4 +95,51 @@ func Register(r *gin.Engine, cfg *config.Config, logger *zap.Logger, mongoClient
 	r.POST("/clients", clientHandler.CreateClient)
 	r.GET("/clients", clientHandler.ListClients)
 	r.PUT("/clients/:client_id", clientHandler.UpdateClient)
+
+	// Client Channels
+	clientChannelHandler := handlers.NewClientChannelHandler(logger)
+	r.POST("/clients/:client_id/channels", clientChannelHandler.CreateChannel)
+	r.GET("/clients/:client_id/channels", clientChannelHandler.ListChannels)
+	r.GET("/clients/:client_id/channels/:channel_id", clientChannelHandler.GetChannel)
+	r.PUT("/clients/:client_id/channels/:channel_id", clientChannelHandler.UpdateChannel)
+	r.DELETE("/clients/:client_id/channels/:channel_id", clientChannelHandler.DeleteChannel)
+	r.GET("/clients/:client_id/channels/:channel_id/config", clientChannelHandler.GetChannelConfig)
+	r.PUT("/clients/:client_id/channels/:channel_id/config", clientChannelHandler.UpdateChannelConfig)
+
+	// Client Data Stores
+	clientDataStoreHandler := handlers.NewClientDataStoreHandler(logger)
+	r.POST("/clients/:client_id/data-stores", clientDataStoreHandler.CreateDataStore)
+	r.GET("/clients/:client_id/data-stores", clientDataStoreHandler.ListDataStores)
+	r.GET("/clients/:client_id/data-stores/:data_store_id", clientDataStoreHandler.GetDataStore)
+	r.PUT("/clients/:client_id/data-stores/:data_store_id", clientDataStoreHandler.UpdateDataStore)
+	r.DELETE("/clients/:client_id/data-stores/:data_store_id", clientDataStoreHandler.DeleteDataStore)
+	r.POST("/clients/:client_id/data-stores/:data_store_id/sync", clientDataStoreHandler.SyncDataStore)
+
+	// Events
+	eventsHandler := handlers.NewEventsHandler(logger)
+	r.POST("/events/processor-configs", eventsHandler.CreateEventProcessorConfig)
+	r.GET("/events/processor-configs", eventsHandler.ListEventProcessorConfigs)
+	r.GET("/events/processor-configs/:config_id", eventsHandler.GetEventProcessorConfig)
+	r.PUT("/events/processor-configs/:config_id", eventsHandler.UpdateEventProcessorConfig)
+	r.DELETE("/events/processor-configs/:config_id", eventsHandler.DeleteEventProcessorConfig)
+	r.POST("/events/process", eventsHandler.ProcessEvent)
+	r.GET("/events/:event_id/status", eventsHandler.GetEventStatus)
+
+	// Semantic Layer
+	semanticLayerHandler := handlers.NewSemanticLayerHandler(logger)
+	r.POST("/semantic-layer/repositories", semanticLayerHandler.CreateRepository)
+	r.GET("/semantic-layer/repositories", semanticLayerHandler.ListRepositories)
+	r.GET("/semantic-layer/repositories/:repo_id", semanticLayerHandler.GetRepository)
+	r.PUT("/semantic-layer/repositories/:repo_id", semanticLayerHandler.UpdateRepository)
+	r.DELETE("/semantic-layer/repositories/:repo_id", semanticLayerHandler.DeleteRepository)
+	r.POST("/semantic-layer/query", semanticLayerHandler.QuerySemanticLayer)
+	r.POST("/semantic-layer/data-stores/sync", semanticLayerHandler.SyncDataStore)
+	r.GET("/semantic-layer/data-stores/sync-status", semanticLayerHandler.GetSyncStatus)
+	r.POST("/semantic-layer/server/start", semanticLayerHandler.StartSemanticServer)
+	r.POST("/semantic-layer/server/stop", semanticLayerHandler.StopSemanticServer)
+	r.GET("/semantic-layer/server/status", semanticLayerHandler.GetSemanticServerStatus)
+
+	// Metrics
+	metricsHandler := handlers.NewMetricsHandler(logger)
+	r.GET("/metrics", metricsHandler.GetMetrics)
 }
