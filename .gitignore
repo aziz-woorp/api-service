@@ -34,3 +34,6 @@ pids
 
 # Environment and secrets
 .env
+
+deployment.yaml
+deployment-python.yaml
