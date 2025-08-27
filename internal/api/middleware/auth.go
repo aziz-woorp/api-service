@@ -17,9 +17,9 @@ import (
 func AuthMiddleware(logger *zap.Logger, db *mongo.Database) gin.HandlerFunc {
 	userRepo := repository.NewUserRepository(db)
 	return func(c *gin.Context) {
-		// Allow unauthenticated access to login, health, ping, docs
+		// Allow unauthenticated access to login, health, ping, readiness, healthz, metrics, docs
 		path := c.Request.URL.Path
-		if path == "/auth/login" || path == "/health" || path == "/ping" || strings.HasPrefix(path, "/docs") {
+		if path == "/auth/login" || path == "/health" || path == "/ping" || path == "/readiness" || path == "/healthz" || path == "/metrics" || strings.HasPrefix(path, "/docs") {
 			c.Next()
 			return
 		}

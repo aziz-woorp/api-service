@@ -28,10 +28,16 @@ func Register(r *gin.Engine, cfg *config.Config, logger *zap.Logger, mongoClient
 	authHandler := handlers.NewAuthHandler(logger, db)
 	r.POST("/auth/login", authHandler.Login)
 
-	// Health
+	// Health and Monitoring
 	healthHandler := handlers.NewHealthHandler(cfg, logger, mongoClient)
 	r.GET("/health", healthHandler.Health)
 	r.GET("/ping", healthHandler.Ping)
+	r.GET("/readiness", healthHandler.Readiness)
+	r.GET("/healthz", healthHandler.Healthz)
+	
+	// Metrics
+	metricsHandler := handlers.NewMetricsHandler(logger)
+	r.GET("/metrics", metricsHandler.GetMetrics)
 
 	// Chat Messages
 	chatMsgRepo := repository.NewChatMessageRepository(db)
@@ -117,10 +123,4 @@ func Register(r *gin.Engine, cfg *config.Config, logger *zap.Logger, mongoClient
 	r.DELETE("/events/processor-configs/:config_id", eventsHandler.DeleteEventProcessorConfig)
 	r.POST("/events/process", eventsHandler.ProcessEvent)
 	r.GET("/events/:event_id/status", eventsHandler.GetEventStatus)
-
-
-
-	// Metrics
-	metricsHandler := handlers.NewMetricsHandler(logger)
-	r.GET("/metrics", metricsHandler.GetMetrics)
 }

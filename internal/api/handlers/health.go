@@ -74,3 +74,41 @@ func (h *HealthHandler) Ping(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, resp)
 }
+
+// Readiness check for Kubernetes
+func (h *HealthHandler) Readiness(c *gin.Context) {
+	now := time.Now().UTC()
+	
+	// Check MongoDB connection
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	
+	dbReady := true
+	if err := h.mongoClient.Ping(ctx, readpref.Primary()); err != nil {
+		h.logger.Error("MongoDB readiness check failed", zap.Error(err))
+		dbReady = false
+	}
+	
+	// Determine overall readiness
+	status := "ready"
+	statusCode := http.StatusOK
+	if !dbReady {
+		status = "not_ready"
+		statusCode = http.StatusServiceUnavailable
+	}
+	
+	resp := gin.H{
+		"status":    status,
+		"timestamp": now.Unix(),
+		"checks": gin.H{
+			"database": dbReady,
+		},
+	}
+	
+	c.JSON(statusCode, resp)
+}
+
+// Kubernetes health check (simplified)
+func (h *HealthHandler) Healthz(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{"status": "healthy"})
+}

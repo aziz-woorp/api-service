@@ -51,6 +51,10 @@ type Config struct {
 	RedisPort     int
 	RedisDB       int
 	RedisPassword string
+
+	// Feature flags
+	EnableClientChannelRouting   bool
+	EnableConfigurableWorkflows  bool
 }
 
 func LoadConfig() *Config {
@@ -58,15 +62,15 @@ func LoadConfig() *Config {
 	_ = godotenv.Load(".env")
 	cfg := &Config{
 		// Application settings
-		ProjectName: getEnv("PROJECT_NAME", "AI Service Backend"),
-		Version:     getEnv("VERSION", "0.0.1"),
-		AppPort:     getEnv("APP_PORT", "8080"),
+		ProjectName: getEnv("PROJECT_NAME", "API Service"),
+		Version:     getEnv("VERSION", "1.0.0"),
+		AppPort:     getEnv("APP_PORT", "8000"),
 		AppEnv:      getEnv("APP_ENV", "development"),
 		GinMode:     getEnv("GIN_MODE", "debug"),
 		LogLevel:    getEnv("LOG_LEVEL", "INFO"),
 
 		// Database
-		MongoURI: getEnv("MONGODB_URI", "mongodb://localhost:27017/api_service_dev"),
+		MongoURI: getEnv("MONGODB_URI", "mongodb://localhost:27017/fraiday-backend"),
 
 		// RabbitMQ/Queue settings
 		CeleryBrokerURL:    getEnv("CELERY_BROKER_URL", ""),
@@ -98,6 +102,10 @@ func LoadConfig() *Config {
 		RedisPort:     getEnvInt("REDIS_PORT", 6379),
 		RedisDB:       getEnvInt("REDIS_DB", 0),
 		RedisPassword: getEnv("REDIS_PASSWORD", ""),
+
+		// Feature flags
+		EnableClientChannelRouting:  getEnvBool("ENABLE_CLIENT_CHANNEL_ROUTING", false),
+		EnableConfigurableWorkflows: getEnvBool("ENABLE_CONFIGURABLE_WORKFLOWS", false),
 	}
 
 	return cfg
@@ -135,4 +143,18 @@ func getEnvInt(key string, defaultVal int) int {
 		return defaultVal
 	}
 	return i
+}
+
+// Helper to get bool envs
+func getEnvBool(key string, defaultVal bool) bool {
+	val := os.Getenv(key)
+	if val == "" {
+		return defaultVal
+	}
+	b, err := strconv.ParseBool(val)
+	if err != nil {
+		log.Printf("Invalid bool for %s: %v, using default %t", key, err, defaultVal)
+		return defaultVal
+	}
+	return b
 }

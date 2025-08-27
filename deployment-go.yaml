@@ -1,0 +1,223 @@
+global:
+  imagePullSecrets:
+    - name: acr-auth
+  labels: {}
+  annotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+nameOverride: api-service
+fullnameOverride: api-service
+
+image:
+  repository: fraiday.azurecr.io/api-service
+  tag: latest
+  pullPolicy: IfNotPresent
+
+replicaCount: 2
+
+service:
+  type: ClusterIP
+  port: 8000
+  targetPort: 8000
+
+resources:
+  requests:
+    cpu: 200m
+    memory: 256Mi
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+
+volumes:
+  - name: env-file
+    secret:
+      secretName: api-service-env
+
+volumeMount:
+  - name: env-file
+    mountPath: /app/.env
+    subPath: .env
+
+secretName: api-service-env
+secretProvider: kubernetes
+
+livenessProbe:
+  httpGet:
+    path: /api/v1/health
+    port: http
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /api/v1/readiness
+    port: http
+  initialDelaySeconds: 15
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+httpRoute:
+  enabled: true
+  prefix: /
+  dedicatedHost: api.app.fraiday.ai
+  gatewayName: app-fraiday-gateway
+
+# Go Task Workers (replacing Celery workers)
+taskWorkers:
+  chatWorkflow:
+    enabled: true
+    name: chat-workflow-worker
+    replicaCount: 2
+    concurrency: 4
+    queues: chat_workflow
+    cmd:
+      - ./api
+      - -mode=worker
+      - -queue=chat_workflow
+      - -concurrency=4
+    resources:
+      requests:
+        cpu: 200m
+        memory: 256Mi
+      limits:
+        cpu: 800m
+        memory: 768Mi
+    volumes:
+      - name: env-file
+        secret:
+          secretName: api-service-env
+    volumeMounts:
+      - name: env-file
+        mountPath: /app/.env
+        subPath: .env
+    secretName: api-service-env
+    nodeSelector: {}
+    tolerations: []
+    affinity: {}
+    
+  events:
+    enabled: true
+    name: events-worker
+    replicaCount: 1
+    concurrency: 2
+    queues: events
+    cmd:
+      - ./api
+      - -mode=worker
+      - -queue=events
+      - -concurrency=2
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+    volumes:
+      - name: env-file
+        secret:
+          secretName: api-service-env
+    volumeMounts:
+      - name: env-file
+        mountPath: /app/.env
+        subPath: .env
+    secretName: api-service-env
+    nodeSelector: {}
+    tolerations: []
+    affinity: {}
+    
+  default:
+    enabled: true
+    name: default-worker
+    replicaCount: 1
+    concurrency: 2
+    queues: default
+    cmd:
+      - ./api
+      - -mode=worker
+      - -queue=default
+      - -concurrency=2
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+    volumes:
+      - name: env-file
+        secret:
+          secretName: api-service-env
+    volumeMounts:
+      - name: env-file
+        mountPath: /app/.env
+        subPath: .env
+    secretName: api-service-env
+    nodeSelector: {}
+    tolerations: []
+    affinity: {}
+
+# Environment Configuration
+env:
+  - name: APP_PORT
+    value: "8000"
+  - name: GIN_MODE
+    value: "release"
+  - name: APP_ENV
+    value: "production"
+  - name: LOG_LEVEL
+    value: "INFO"
+
+# Horizontal Pod Autoscaler
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+# Pod Disruption Budget
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# Security Context
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 2000
+
+# Network Policy
+networkPolicy:
+  enabled: true
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8000
+  egress:
+    - to: []
+      ports:
+        - protocol: TCP
+          port: 27017  # MongoDB
+        - protocol: TCP
+          port: 5672   # RabbitMQ
+        - protocol: TCP
+          port: 443    # HTTPS
+        - protocol: TCP
+          port: 80     # HTTP
+
+# Service Monitor for Prometheus
+serviceMonitor:
+  enabled: true
+  path: /api/v1/metrics
+  interval: 30s
+  scrapeTimeout: 10s

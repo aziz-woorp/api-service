@@ -42,6 +42,9 @@ dist/
 .envrc.*
 .envrc.local
 
+# Allow Docker environment file
+!.env.docker
+
 # Ignore dependency directories
 vendor/
 

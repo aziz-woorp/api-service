@@ -32,16 +32,16 @@ RUN adduser -D -g '' appuser
 ARG SERVICE_NAME=api-service
 COPY --from=builder /app/${SERVICE_NAME} .
 
-# Copy env file (default to .env.dev, can be overridden at build time)
-ARG ENV_FILE=env/.env.dev
+# Copy env file (default to .env.docker, can be overridden at build time)
+ARG ENV_FILE=.env.docker
 COPY ${ENV_FILE} .env
 
-# Expose port (default 8080, can be overridden by env)
-EXPOSE 8080
+# Expose port (default 8000, can be overridden by env)
+EXPOSE 8000
 
 USER appuser
 
 # Run the binary
 # Default to server mode, but allow worker mode via CMD override
 ENTRYPOINT ["./api-service"]
-CMD ["server"]
+CMD []

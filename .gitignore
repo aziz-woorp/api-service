@@ -34,6 +34,9 @@ pids
 
 # Environment and secrets
 .env
+.env.docker
 
 deployment.yaml
 deployment-python.yaml
+
+.DS_Store

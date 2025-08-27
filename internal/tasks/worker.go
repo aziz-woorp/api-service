@@ -415,18 +415,65 @@ func (tw *TaskWorker) HandleSuggestionWorkflow(ctx context.Context, kwargs map[s
 		zap.String("message_id", payload.MessageID),
 		zap.String("session_id", payload.SessionID))
 
-	// TODO: Implement actual suggestion workflow logic
-	// This would include:
 	// 1. Fetch message from database
-	// 2. Generate suggestions
-	// 3. Save suggestions to database
-	// 4. Send webhook notifications
+	message, err := tw.databaseService.GetChatMessage(ctx, payload.MessageID)
+	if err != nil {
+		return fmt.Errorf("failed to get message: %w", err)
+	}
 
-	// Simulate processing time
-	time.Sleep(50 * time.Millisecond)
+	// 2. Get session context
+	sessionContext, err := tw.databaseService.GetSessionContext(ctx, payload.SessionID)
+	if err != nil {
+		return fmt.Errorf("failed to get session context: %w", err)
+	}
+
+	// 3. Generate suggestions using AI service
+	aiResponse, err := tw.aiService.GenerateSuggestions(ctx, payload.MessageID, payload.SessionID, message.Content, sessionContext)
+	if err != nil {
+		return fmt.Errorf("failed to generate suggestions: %w", err)
+	}
+
+	// 4. Save AI response as a new message
+	suggestionMessage := &service.ChatMessage{
+		MessageID: aiResponse.MessageID + "_suggestion",
+		SessionID: payload.SessionID,
+		ClientID:  message.ClientID,
+		Content:   aiResponse.Response,
+		Role:      "assistant",
+		Metadata: map[string]interface{}{
+			"type":        "suggestion",
+			"source":      "ai_service",
+			"original_message_id": payload.MessageID,
+			"suggestions": aiResponse.Suggestions,
+		},
+	}
+
+	if err := tw.databaseService.SaveChatMessage(ctx, suggestionMessage); err != nil {
+		return fmt.Errorf("failed to save suggestion message: %w", err)
+	}
+
+	// 5. Send webhook notification (using a default webhook URL for now)
+	// TODO: Get webhook URL from client configuration
+	webhookURL := "" // This should be retrieved from client config
+	if webhookURL != "" {
+		suggestionData := map[string]interface{}{
+			"suggestion_id": aiResponse.MessageID + "_suggestion",
+			"content":       aiResponse.Response,
+			"suggestions":   aiResponse.Suggestions,
+			"original_message_id": payload.MessageID,
+		}
+
+		if err := tw.webhookService.SendSuggestionWebhook(ctx, webhookURL, aiResponse.MessageID+"_suggestion", payload.SessionID, suggestionData); err != nil {
+			tw.logger.Error("Failed to send suggestion webhook",
+				zap.Error(err),
+				zap.String("webhook_url", webhookURL))
+			// Don't fail the task if webhook fails
+		}
+	}
 
 	tw.logger.Info("Completed suggestion workflow task",
-		zap.String("message_id", payload.MessageID))
+		zap.String("message_id", payload.MessageID),
+		zap.String("suggestion_id", aiResponse.MessageID+"_suggestion"))
 
 	return nil
 }
