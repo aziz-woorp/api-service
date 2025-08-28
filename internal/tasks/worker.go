@@ -63,7 +63,8 @@ func NewTaskWorker(rabbitMQURL string, logger *zap.Logger, aiURL, aiToken string
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	webhookService := service.NewWebhookService(logger)
+	// Initialize services with minimal dependencies for now
+	webhookService := service.NewWebhookService(logger, nil)
 	aiService := service.NewAIService(logger, aiURL, aiToken)
 
 	return &TaskWorker{
@@ -340,7 +341,9 @@ func (tw *TaskWorker) HandleChatWorkflow(ctx context.Context, kwargs map[string]
 		ClientID:  message.ClientID,
 		Content:   aiResponse.Response,
 		Role:      "assistant",
-		Metadata:  aiResponse.Metadata,
+		Metadata:  map[string]interface{}{
+			"close_session": aiResponse.Metadata.CloseSession,
+		},
 	}
 	
 	if err := tw.databaseService.SaveChatMessage(ctx, responseMessage); err != nil {
@@ -478,7 +481,10 @@ func (tw *TaskWorker) HandleSuggestionWorkflow(ctx context.Context, kwargs map[s
 	return nil
 }
 
+
+
 // HandleEventProcessor handles event processor tasks
+// This mirrors the process_event task from Python backend
 func (tw *TaskWorker) HandleEventProcessor(ctx context.Context, kwargs map[string]interface{}) error {
 	// Parse payload
 	payloadBytes, err := json.Marshal(kwargs)
@@ -497,29 +503,81 @@ func (tw *TaskWorker) HandleEventProcessor(ctx context.Context, kwargs map[strin
 		zap.String("entity_type", payload.EntityType),
 		zap.String("entity_id", payload.EntityID))
 
-	// Implement event processing logic equivalent to Python Celery task
-	// This mirrors the process_event task from Python backend
-	
-	// 1. Get client_id from entity
-	tw.logger.Info("Determining client_id for entity",
-		zap.String("entity_type", payload.EntityType),
-		zap.String("entity_id", payload.EntityID))
-	
-	// 2. Find matching processors for this event
-	tw.logger.Info("Finding matching processors",
-		zap.String("event_type", payload.EventType),
-		zap.String("entity_type", payload.EntityType))
-	
-	// 3. Create delivery records and dispatch to processors
-	tw.logger.Info("Creating delivery records",
-		zap.String("event_id", payload.EventID))
-	
-	// 4. Process each matching processor
-	tw.logger.Info("Dispatching to processors",
-		zap.String("event_id", payload.EventID))
+	// 2. Get client_id from the entity
+	clientID, err := tw.getClientIDForEntity(payload.EntityType, payload.EntityID)
+	if err != nil || clientID == "" {
+		tw.logger.Error("Could not determine client_id",
+			zap.String("entity_type", payload.EntityType),
+			zap.String("entity_id", payload.EntityID),
+			zap.Error(err))
+		return fmt.Errorf("could not determine client_id for %s:%s: %w", payload.EntityType, payload.EntityID, err)
+	}
 
-	tw.logger.Info("Completed event processor task",
-		zap.String("event_id", payload.EventID))
+	// 4. Prepare event data for dispatching
+	dispatchData := map[string]interface{}{
+		"event_id":    payload.EventID,
+		"event_type":  payload.EventType,
+		"entity_type": payload.EntityType,
+		"entity_id":   payload.EntityID,
+		"parent_id":   payload.ParentID,
+		"data":        payload.Data,
+		"timestamp":   time.Now(),
+		"client_id":   clientID,
+	}
+
+	// 5. Create a delivery record and dispatch
+	deliveryRecord := &service.EventDeliveryRecord{
+		EventID:     payload.EventID,
+		ProcessorID: "default", // Simplified for now
+		ClientID:    clientID,
+		EventType:   payload.EventType,
+		EntityType:  payload.EntityType,
+		Status:      "pending",
+		Attempts:    0,
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+		Payload:     dispatchData,
+	}
+
+	if err := tw.databaseService.CreateEventDeliveryRecord(ctx, deliveryRecord); err != nil {
+		tw.logger.Error("Failed to create delivery record", zap.Error(err))
+		return fmt.Errorf("failed to create delivery record: %w", err)
+	}
+
+	tw.logger.Info("Event processor task completed successfully",
+		zap.String("event_id", payload.EventID),
+		zap.String("client_id", clientID))
 
 	return nil
+}
+
+// getClientIDForEntity determines client_id for different entity types
+// This mirrors the _get_client_id_for_entity function from Python backend
+func (tw *TaskWorker) getClientIDForEntity(entityType, entityID string) (string, error) {
+	switch entityType {
+	case "chat_message":
+		message, err := tw.databaseService.GetChatMessage(context.Background(), entityID)
+		if err != nil {
+			return "", err
+		}
+		return message.ClientID, nil
+
+	case "chat_session":
+		session, err := tw.databaseService.GetChatSession(context.Background(), entityID)
+		if err != nil {
+			return "", err
+		}
+		return session.ClientID, nil
+
+	case "chat_suggestion":
+		// For now, return a default client ID
+		return "default_client", nil
+
+	case "ai_service":
+		// For AI service events, return a default client ID
+		return "default_client", nil
+
+	default:
+		return "", fmt.Errorf("unsupported entity type: %s", entityType)
+	}
 }

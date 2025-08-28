@@ -8,22 +8,25 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/fraiday-org/api-service/internal/models"
 	"go.uber.org/zap"
 )
 
 // WebhookService handles webhook notifications
 type WebhookService struct {
-	logger     *zap.Logger
-	httpClient *http.Client
+	logger                *zap.Logger
+	httpClient            *http.Client
+	WebhookPayloadService *WebhookPayloadService
 }
 
 // NewWebhookService creates a new webhook service
-func NewWebhookService(logger *zap.Logger) *WebhookService {
+func NewWebhookService(logger *zap.Logger, webhookPayloadService *WebhookPayloadService) *WebhookService {
 	return &WebhookService{
 		logger: logger,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
+		WebhookPayloadService: webhookPayloadService,
 	}
 }
 
@@ -37,16 +40,26 @@ type WebhookPayload struct {
 }
 
 // SendWebhook sends a webhook notification to the specified URL
-func (ws *WebhookService) SendWebhook(ctx context.Context, webhookURL string, payload WebhookPayload) error {
-	ws.logger.Info("Sending webhook notification",
-		zap.String("webhook_url", webhookURL),
-		zap.String("event_type", payload.EventType),
-		zap.String("entity_type", payload.EntityType),
-		zap.String("entity_id", payload.EntityID))
-
-	// Set timestamp if not provided
-	if payload.Timestamp.IsZero() {
-		payload.Timestamp = time.Now().UTC()
+func (ws *WebhookService) SendWebhook(ctx context.Context, webhookURL string, payload interface{}) error {
+	// Log based on payload type
+	if webhookPayload, ok := payload.(WebhookPayload); ok {
+		ws.logger.Info("Sending webhook notification",
+			zap.String("webhook_url", webhookURL),
+			zap.String("event_type", webhookPayload.EventType),
+			zap.String("entity_type", webhookPayload.EntityType),
+			zap.String("entity_id", webhookPayload.EntityID),
+		)
+		
+		// Add timestamp if not set
+		if webhookPayload.Timestamp.IsZero() {
+			webhookPayload.Timestamp = time.Now().UTC()
+			payload = webhookPayload
+		}
+	} else {
+		ws.logger.Info("Sending webhook notification",
+			zap.String("webhook_url", webhookURL),
+			zap.String("payload_type", "structured"),
+		)
 	}
 
 	// Marshal payload to JSON
@@ -94,15 +107,36 @@ func (ws *WebhookService) SendWebhook(ctx context.Context, webhookURL string, pa
 
 // SendChatMessageWebhook sends a webhook for chat message events
 func (ws *WebhookService) SendChatMessageWebhook(ctx context.Context, webhookURL, messageID, sessionID string, messageData map[string]interface{}) error {
-	payload := WebhookPayload{
-		EventType:  "chat_message_created",
-		EntityType: "chat_message",
-		EntityID:   messageID,
-		Data: map[string]interface{}{
-			"message_id": messageID,
-			"session_id": sessionID,
-			"message":    messageData,
-		},
+	var payload interface{}
+	
+	// Use the new payload service if available
+	if ws.WebhookPayloadService != nil {
+		if payloadData, err := ws.WebhookPayloadService.CreatePayload(ctx, models.EntityTypeChatMessage, messageID); err == nil {
+			payload = payloadData
+		} else {
+			// Fallback to legacy payload
+			payload = WebhookPayload{
+				EventType:  "chat_message_created",
+				EntityType: "chat_message",
+				EntityID:   messageID,
+				Data: map[string]interface{}{
+					"message_id": messageID,
+					"session_id": sessionID,
+					"message":    messageData,
+				},
+			}
+		}
+	} else {
+		payload = WebhookPayload{
+			EventType:  "chat_message_created",
+			EntityType: "chat_message",
+			EntityID:   messageID,
+			Data: map[string]interface{}{
+				"message_id": messageID,
+				"session_id": sessionID,
+				"message":    messageData,
+			},
+		}
 	}
 
 	return ws.SendWebhook(ctx, webhookURL, payload)
@@ -110,15 +144,36 @@ func (ws *WebhookService) SendChatMessageWebhook(ctx context.Context, webhookURL
 
 // SendSuggestionWebhook sends a webhook for suggestion events
 func (ws *WebhookService) SendSuggestionWebhook(ctx context.Context, webhookURL, suggestionID, sessionID string, suggestionData map[string]interface{}) error {
-	payload := WebhookPayload{
-		EventType:  "suggestion_created",
-		EntityType: "chat_suggestion",
-		EntityID:   suggestionID,
-		Data: map[string]interface{}{
-			"suggestion_id": suggestionID,
-			"session_id":    sessionID,
-			"suggestion":    suggestionData,
-		},
+	var payload interface{}
+	
+	// Use the new payload service if available
+	if ws.WebhookPayloadService != nil {
+		if payloadData, err := ws.WebhookPayloadService.CreatePayload(ctx, models.EntityTypeChatSuggestion, suggestionID); err == nil {
+			payload = payloadData
+		} else {
+			// Fallback to legacy payload
+			payload = WebhookPayload{
+				EventType:  "suggestion_created",
+				EntityType: "chat_suggestion",
+				EntityID:   suggestionID,
+				Data: map[string]interface{}{
+					"suggestion_id": suggestionID,
+					"session_id":    sessionID,
+					"suggestion":    suggestionData,
+				},
+			}
+		}
+	} else {
+		payload = WebhookPayload{
+			EventType:  "suggestion_created",
+			EntityType: "chat_suggestion",
+			EntityID:   suggestionID,
+			Data: map[string]interface{}{
+				"suggestion_id": suggestionID,
+				"session_id":    sessionID,
+				"suggestion":    suggestionData,
+			},
+		}
 	}
 
 	return ws.SendWebhook(ctx, webhookURL, payload)

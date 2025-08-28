@@ -100,6 +100,7 @@ type EventProcessorPayload struct {
 	EventType  string                 `json:"event_type"`
 	EntityType string                 `json:"entity_type"`
 	EntityID   string                 `json:"entity_id"`
+	ParentID   string                 `json:"parent_id"`
 	Data       map[string]interface{} `json:"data"`
 }
 

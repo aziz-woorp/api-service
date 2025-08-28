@@ -56,3 +56,12 @@ func (r *ClientRepository) Update(ctx context.Context, clientID string, update b
 	}
 	return &updated, nil
 }
+
+func (r *ClientRepository) GetByClientID(ctx context.Context, clientID string) (*models.Client, error) {
+	var client models.Client
+	err := r.Collection.FindOne(ctx, bson.M{"client_id": clientID}).Decode(&client)
+	if err != nil {
+		return nil, err
+	}
+	return &client, nil
+}

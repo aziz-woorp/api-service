@@ -123,4 +123,47 @@ func Register(r *gin.Engine, cfg *config.Config, logger *zap.Logger, mongoClient
 	r.DELETE("/events/processor-configs/:config_id", eventsHandler.DeleteEventProcessorConfig)
 	r.POST("/events/process", eventsHandler.ProcessEvent)
 	r.GET("/events/:event_id/status", eventsHandler.GetEventStatus)
+
+	// Event Processor Configs (Client-specific)
+	eventProcessorConfigRepo := repository.NewEventProcessorConfigRepository(db)
+	eventProcessorConfigService := service.NewEventProcessorConfigService(eventProcessorConfigRepo)
+	eventProcessorConfigHandler := handlers.NewEventProcessorConfigHandler(eventProcessorConfigService)
+
+	r.POST("/clients/:client_id/processor-configs", eventProcessorConfigHandler.CreateProcessorConfig)
+	r.GET("/clients/:client_id/processor-configs", eventProcessorConfigHandler.ListProcessorConfigs)
+	r.GET("/clients/:client_id/processor-configs/:config_id", eventProcessorConfigHandler.GetProcessorConfig)
+	r.PUT("/clients/:client_id/processor-configs/:config_id", eventProcessorConfigHandler.UpdateProcessorConfig)
+	r.DELETE("/clients/:client_id/processor-configs/:config_id", eventProcessorConfigHandler.DeleteProcessorConfig)
+
+	// Semantic Layers
+	semanticLayerHandler := handlers.NewSemanticLayerHandler()
+	r.POST("/clients/:client_id/semantic-layers", semanticLayerHandler.CreateSemanticLayer)
+	r.GET("/clients/:client_id/semantic-layers", semanticLayerHandler.ListSemanticLayers)
+	r.GET("/clients/:client_id/semantic-layers/:layer_id", semanticLayerHandler.GetSemanticLayer)
+	r.DELETE("/clients/:client_id/semantic-layers/:layer_id", semanticLayerHandler.DeleteSemanticLayer)
+	r.POST("/clients/:client_id/semantic-layers/:layer_id/data-stores", semanticLayerHandler.AddDataStore)
+	r.DELETE("/clients/:client_id/semantic-layers/:layer_id/data-stores", semanticLayerHandler.RemoveDataStore)
+
+	// Repositories
+	repositoryHandler := handlers.NewRepositoryHandler()
+	r.POST("/clients/:client_id/repositories", repositoryHandler.CreateRepository)
+	r.GET("/clients/:client_id/repositories", repositoryHandler.ListRepositories)
+	r.GET("/clients/:client_id/repositories/:repo_id", repositoryHandler.GetRepository)
+	r.PUT("/clients/:client_id/repositories/:repo_id", repositoryHandler.UpdateRepository)
+	r.DELETE("/clients/:client_id/repositories/:repo_id", repositoryHandler.DeleteRepository)
+
+	// Semantic Servers
+	semanticServerHandler := handlers.NewSemanticServerHandler()
+	r.POST("/clients/:client_id/semantic-servers", semanticServerHandler.CreateSemanticServer)
+	r.GET("/clients/:client_id/semantic-servers", semanticServerHandler.ListSemanticServers)
+	r.GET("/clients/:client_id/semantic-servers/:server_id", semanticServerHandler.GetSemanticServer)
+	r.PUT("/clients/:client_id/semantic-servers/:server_id", semanticServerHandler.UpdateSemanticServer)
+	r.DELETE("/clients/:client_id/semantic-servers/:server_id", semanticServerHandler.DeleteSemanticServer)
+
+	// Data Store Sync
+	dataStoreSyncHandler := handlers.NewDataStoreSyncHandler()
+	r.GET("/clients/:client_id/data-stores", dataStoreSyncHandler.ListDataStores)
+	r.GET("/clients/:client_id/data-stores/:store_id/sync-status", dataStoreSyncHandler.GetDataStoreStatus)
+	r.POST("/clients/:client_id/data-stores/:store_id/sync", dataStoreSyncHandler.TriggerDataStoreSync)
+	r.GET("/clients/:client_id/data-stores/:store_id/sync-logs", dataStoreSyncHandler.GetSyncLogs)
 }
