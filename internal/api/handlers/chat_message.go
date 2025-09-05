@@ -63,27 +63,18 @@ func (h *ChatMessageHandler) CreateMessage(c *gin.Context) {
 		return
 	}
 
-	// Background workflow triggers (AI chat/suggestion)
+	// Background workflow triggers (AI chat/suggestion) - AFTER message is saved
 	aiEnabled, aiOk := msg.Config["ai_enabled"].(bool)
 	suggestionMode, suggestionOk := msg.Config["suggestion_mode"].(bool)
 	if aiOk && aiEnabled && (!suggestionOk || !suggestionMode) {
-		// AI chat workflow
-		// Use msg.ID.Hex() and msg.SessionID.Hex() if available
-		messageID := ""
-		sessionID := ""
-		if msg.ID != primitive.NilObjectID {
-			messageID = msg.ID.Hex()
-		}
-		sessionID = msg.SessionID.Hex()
+		// AI chat workflow - message should now have ID assigned by database
+		messageID := msg.ID.Hex() // msg.ID is now populated after successful creation
+		sessionID := msg.SessionID.Hex()
 		service.TriggerChatWorkflow(c.Request.Context(), messageID, sessionID)
 	} else if suggestionOk && suggestionMode && (!aiOk || !aiEnabled) {
-		// Suggestion workflow
-		messageID := ""
-		sessionID := ""
-		if msg.ID != primitive.NilObjectID {
-			messageID = msg.ID.Hex()
-		}
-		sessionID = msg.SessionID.Hex()
+		// Suggestion workflow - message should now have ID assigned by database
+		messageID := msg.ID.Hex() // msg.ID is now populated after successful creation
+		sessionID := msg.SessionID.Hex()
 		service.TriggerSuggestionWorkflow(c.Request.Context(), messageID, sessionID)
 	}
 
@@ -200,18 +191,15 @@ func (h *ChatMessageHandler) BulkCreateMessages(c *gin.Context) {
 		return
 	}
 
-	// Trigger workflow for the latest message (by created_at if available, else last in slice)
+	// Trigger workflow for the latest message - AFTER bulk create
 	if len(msgs) > 0 {
 		latestIdx := len(msgs) - 1
 		latest := msgs[latestIdx]
 		aiEnabled, aiOk := latest.Config["ai_enabled"].(bool)
 		suggestionMode, suggestionOk := latest.Config["suggestion_mode"].(bool)
-		messageID := ""
-		sessionID := ""
-		if latest.ID != primitive.NilObjectID {
-			messageID = latest.ID.Hex()
-		}
-		sessionID = latest.SessionID.Hex()
+		// latest.ID is now populated after successful bulk creation
+		messageID := latest.ID.Hex()
+		sessionID := latest.SessionID.Hex()
 		if aiOk && aiEnabled && (!suggestionOk || !suggestionMode) {
 			service.TriggerChatWorkflow(c.Request.Context(), messageID, sessionID)
 		} else if suggestionOk && suggestionMode && (!aiOk || !aiEnabled) {

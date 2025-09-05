@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/fraiday-org/api-service/internal/models"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -27,18 +28,8 @@ func NewDatabaseService(logger *zap.Logger, mongoClient *mongo.Client, dbName st
 	}
 }
 
-// ChatMessage represents a chat message document
-type ChatMessage struct {
-	ID        primitive.ObjectID `bson:"_id,omitempty"`
-	MessageID string             `bson:"message_id"`
-	SessionID string             `bson:"session_id"`
-	ClientID  string             `bson:"client_id"`
-	Content   string             `bson:"content"`
-	Role      string             `bson:"role"` // user, assistant, system
-	CreatedAt time.Time          `bson:"created_at"`
-	UpdatedAt time.Time          `bson:"updated_at"`
-	Metadata  map[string]interface{} `bson:"metadata,omitempty"`
-}
+// ChatMessage alias for models.ChatMessage for backwards compatibility in worker
+type ChatMessage = models.ChatMessage
 
 // ChatSession represents a chat session document
 type ChatSession struct {
@@ -73,8 +64,14 @@ type EventDeliveryRecord struct {
 func (db *DatabaseService) GetChatMessage(ctx context.Context, messageID string) (*ChatMessage, error) {
 	collection := db.database.Collection("chat_messages")
 	
+	// Convert messageID string to ObjectID
+	objectID, err := primitive.ObjectIDFromHex(messageID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid message ID format: %s", messageID)
+	}
+	
 	var message ChatMessage
-	err := collection.FindOne(ctx, bson.M{"message_id": messageID}).Decode(&message)
+	err = collection.FindOne(ctx, bson.M{"_id": objectID}).Decode(&message)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
 			return nil, fmt.Errorf("message not found: %s", messageID)
@@ -110,12 +107,27 @@ func (db *DatabaseService) SaveChatMessage(ctx context.Context, message *ChatMes
 		message.CreatedAt = message.UpdatedAt
 	}
 	
-	filter := bson.M{"message_id": message.MessageID}
-	update := bson.M{"$set": message}
-	
-	_, err := collection.UpdateOne(ctx, filter, update, nil)
-	if err != nil {
-		return fmt.Errorf("failed to save message: %w", err)
+	// If message has no ID, create new; otherwise update existing
+	if message.ID == primitive.NilObjectID {
+		// Create new message
+		result, err := collection.InsertOne(ctx, message)
+		if err != nil {
+			return fmt.Errorf("failed to create message: %w", err)
+		}
+		
+		// Set the generated ObjectID back to the message
+		if oid, ok := result.InsertedID.(primitive.ObjectID); ok {
+			message.ID = oid
+		}
+	} else {
+		// Update existing message
+		filter := bson.M{"_id": message.ID}
+		update := bson.M{"$set": message}
+		
+		_, err := collection.UpdateOne(ctx, filter, update)
+		if err != nil {
+			return fmt.Errorf("failed to update message: %w", err)
+		}
 	}
 	
 	return nil

@@ -12,6 +12,7 @@ import (
 
 	amqp "github.com/rabbitmq/amqp091-go"
 	"go.uber.org/zap"
+	"github.com/fraiday-org/api-service/internal/models"
 	"github.com/fraiday-org/api-service/internal/service"
 )
 
@@ -320,9 +321,9 @@ func (tw *TaskWorker) HandleChatWorkflow(ctx context.Context, kwargs map[string]
 	var aiResponse *service.AIResponse
 	
 	if payload.SuggestionMode {
-		aiResponse, err = tw.aiService.GenerateSuggestions(ctx, payload.MessageID, payload.SessionID, message.Content, sessionContext)
+		aiResponse, err = tw.aiService.GenerateSuggestions(ctx, payload.MessageID, payload.SessionID, message.Text, sessionContext)
 	} else {
-		aiResponse, err = tw.aiService.GenerateChatResponse(ctx, payload.MessageID, payload.SessionID, message.Content, sessionContext)
+		aiResponse, err = tw.aiService.GenerateChatResponse(ctx, payload.MessageID, payload.SessionID, message.Text, sessionContext)
 	}
 	
 	if err != nil {
@@ -336,12 +337,15 @@ func (tw *TaskWorker) HandleChatWorkflow(ctx context.Context, kwargs map[string]
 	
 	// Save AI response to database
 	responseMessage := &service.ChatMessage{
-		MessageID: aiResponse.MessageID + "_response",
-		SessionID: aiResponse.SessionID,
-		ClientID:  message.ClientID,
-		Content:   aiResponse.Response,
-		Role:      "assistant",
-		Metadata:  map[string]interface{}{
+		Text:      aiResponse.Response,
+		SenderType: "assistant",
+		SessionID:  message.SessionID,
+		Category:   models.MessageCategoryMessage,
+		Config: map[string]interface{}{
+			"ai_response": true,
+			"original_message_id": payload.MessageID,
+		},
+		Data: map[string]interface{}{
 			"close_session": aiResponse.Metadata.CloseSession,
 		},
 	}
@@ -431,22 +435,24 @@ func (tw *TaskWorker) HandleSuggestionWorkflow(ctx context.Context, kwargs map[s
 	}
 
 	// 3. Generate suggestions using AI service
-	aiResponse, err := tw.aiService.GenerateSuggestions(ctx, payload.MessageID, payload.SessionID, message.Content, sessionContext)
+	aiResponse, err := tw.aiService.GenerateSuggestions(ctx, payload.MessageID, payload.SessionID, message.Text, sessionContext)
 	if err != nil {
 		return fmt.Errorf("failed to generate suggestions: %w", err)
 	}
 
 	// 4. Save AI response as a new message
 	suggestionMessage := &service.ChatMessage{
-		MessageID: aiResponse.MessageID + "_suggestion",
-		SessionID: payload.SessionID,
-		ClientID:  message.ClientID,
-		Content:   aiResponse.Response,
-		Role:      "assistant",
-		Metadata: map[string]interface{}{
+		Text:       aiResponse.Response,
+		SenderType: "assistant",
+		SessionID:  message.SessionID,
+		Category:   models.MessageCategoryMessage,
+		Config: map[string]interface{}{
+			"suggestion_mode": true,
+			"original_message_id": payload.MessageID,
+		},
+		Data: map[string]interface{}{
 			"type":        "suggestion",
 			"source":      "ai_service",
-			"original_message_id": payload.MessageID,
 			"suggestions": aiResponse.Suggestions,
 		},
 	}
@@ -556,11 +562,13 @@ func (tw *TaskWorker) HandleEventProcessor(ctx context.Context, kwargs map[strin
 func (tw *TaskWorker) getClientIDForEntity(entityType, entityID string) (string, error) {
 	switch entityType {
 	case "chat_message":
-		message, err := tw.databaseService.GetChatMessage(context.Background(), entityID)
+		_, err := tw.databaseService.GetChatMessage(context.Background(), entityID)
 		if err != nil {
 			return "", err
 		}
-		return message.ClientID, nil
+		// For now, return a default client ID since ChatMessage doesn't have ClientID field
+		// TODO: Implement proper client resolution logic
+		return "default_client", nil
 
 	case "chat_session":
 		session, err := tw.databaseService.GetChatSession(context.Background(), entityID)

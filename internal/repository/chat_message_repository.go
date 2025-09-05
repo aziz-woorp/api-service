@@ -31,8 +31,18 @@ func (r *ChatMessageRepository) Create(ctx context.Context, msg *models.ChatMess
 	now := time.Now().UTC()
 	msg.CreatedAt = now
 	msg.UpdatedAt = now
-	_, err := r.Collection.InsertOne(ctx, msg)
-	return err
+	
+	result, err := r.Collection.InsertOne(ctx, msg)
+	if err != nil {
+		return err
+	}
+	
+	// Set the generated ObjectID back to the message
+	if oid, ok := result.InsertedID.(primitive.ObjectID); ok {
+		msg.ID = oid
+	}
+	
+	return nil
 }
 
 // List retrieves chat messages by session, user, or other filters.
@@ -76,8 +86,20 @@ func (r *ChatMessageRepository) BulkCreate(ctx context.Context, msgs []models.Ch
 		msgs[i].UpdatedAt = now
 		docs[i] = msgs[i]
 	}
-	_, err := r.Collection.InsertMany(ctx, docs)
-	return err
+	
+	result, err := r.Collection.InsertMany(ctx, docs)
+	if err != nil {
+		return err
+	}
+	
+	// Set the generated ObjectIDs back to the messages
+	for i, insertedID := range result.InsertedIDs {
+		if oid, ok := insertedID.(primitive.ObjectID); ok && i < len(msgs) {
+			msgs[i].ID = oid
+		}
+	}
+	
+	return nil
 }
 
 // GetByID retrieves a chat message by its ObjectID.

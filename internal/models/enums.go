@@ -58,6 +58,11 @@ const (
 	// AI Service Events
 	EventTypeAIRequestSent     EventType = "ai_request_sent"
 	EventTypeAIResponseReceived EventType = "ai_response_received"
+
+	// CSAT Events
+	EventTypeCSATTriggered    EventType = "csat.triggered"
+	EventTypeCSATMessageSent  EventType = "csat.message.sent"
+	EventTypeCSATCompleted    EventType = "csat.completed"
 )
 
 // EntityType represents the type of entity in events
@@ -68,6 +73,9 @@ const (
 	EntityTypeChatMessage   EntityType = "chat_message"
 	EntityTypeChatSuggestion EntityType = "chat_suggestion"
 	EntityTypeAIService     EntityType = "ai_service"
+	EntityTypeCSATSession   EntityType = "csat_session"
+	EntityTypeCSATQuestion  EntityType = "csat_question"
+	EntityTypeCSATResponse  EntityType = "csat_response"
 )
 
 // DeliveryStatus represents the status of event delivery

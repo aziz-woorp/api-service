@@ -105,7 +105,7 @@ func runWorker(cfg *config.Config, logger *zap.Logger, mongoClient *mongo.Client
 		zap.String("rabbitmq_url", rabbitMQURL))
 
 	// Initialize database service
-	databaseService := service.NewDatabaseService(logger, mongoClient, "api_service")
+	databaseService := service.NewDatabaseService(logger, mongoClient, cfg.MongoDB)
 	
 	// Initialize task worker
 	taskWorker, err := tasks.NewTaskWorker(rabbitMQURL, logger, cfg.AIServiceURL, cfg.SlackAIToken, databaseService)

@@ -14,8 +14,11 @@ import (
 func SetupRouter(cfg *config.Config, logger *zap.Logger, mongoClient *mongo.Client) *gin.Engine {
 	engine := gin.New()
 
-	// Initialize metrics service
+	// Initialize services
 	metricsService := service.NewMetricsService(logger)
+	
+	// Initialize workflow service with config and logger
+	service.InitializeWorkflowService(cfg, logger)
 
 	// Middleware
 	engine.Use(middleware.RequestID())

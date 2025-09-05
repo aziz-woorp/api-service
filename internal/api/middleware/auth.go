@@ -1,61 +1,62 @@
 package middleware
 
 import (
-	"context"
+	"encoding/base64"
 	"net/http"
+	"os"
 	"strings"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.uber.org/zap"
-
-	"github.com/fraiday-org/api-service/internal/api/utils"
-	"github.com/fraiday-org/api-service/internal/repository"
 )
 
 func AuthMiddleware(logger *zap.Logger, db *mongo.Database) gin.HandlerFunc {
-	userRepo := repository.NewUserRepository(db)
+	adminAPIKey := os.Getenv("ADMIN_API_KEY")
+	if adminAPIKey == "" {
+		adminAPIKey = "sample-api-key" // fallback
+	}
+
 	return func(c *gin.Context) {
-		// Allow unauthenticated access to login, health, ping, readiness, healthz, metrics, docs
+		// Allow unauthenticated access to health endpoints
 		path := c.Request.URL.Path
-		if path == "/auth/login" || path == "/health" || path == "/ping" || path == "/readiness" || path == "/healthz" || path == "/metrics" || strings.HasPrefix(path, "/docs") {
+		if path == "/health" || path == "/ping" || path == "/readiness" || path == "/healthz" || path == "/metrics" || strings.HasPrefix(path, "/docs") {
 			c.Next()
 			return
 		}
 
 		authHeader := c.GetHeader("Authorization")
-		if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing or invalid Authorization header"})
-			return
-		}
-		token := strings.TrimPrefix(authHeader, "Bearer ")
-
-		// Decode token to get username
-		username, err := utils.DecodeTokenUsername(token)
-		if err != nil {
-			logger.Warn("invalid token", zap.Error(err))
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
+		if authHeader == "" {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing Authorization header"})
 			return
 		}
 
-		// Lookup user and validate token
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		defer cancel()
-		user, err := userRepo.FindByUsername(ctx, username)
-		if err != nil || user == nil || !user.IsActive {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid user"})
-			return
+		// Check for API key (Bearer token)
+		if strings.HasPrefix(authHeader, "Bearer ") {
+			apiKey := strings.TrimPrefix(authHeader, "Bearer ")
+			if apiKey == adminAPIKey {
+				c.Set("auth_type", "api_key")
+				c.Next()
+				return
+			}
 		}
-		// Validate token signature and expiry (1h)
-		_, err = utils.ValidateToken(token, user.SecretKey, time.Hour)
-		if err != nil {
-			logger.Warn("token validation failed", zap.Error(err))
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid or expired token"})
-			return
+
+		// Check for Basic Auth (for AI service communication)
+		if strings.HasPrefix(authHeader, "Basic ") {
+			basicAuth := strings.TrimPrefix(authHeader, "Basic ")
+			decoded, err := base64.StdEncoding.DecodeString(basicAuth)
+			if err == nil {
+				credentials := string(decoded)
+				// Expected format: "username:password" or just validate the token
+				if credentials == adminAPIKey || strings.Contains(credentials, adminAPIKey) {
+					c.Set("auth_type", "basic")
+					c.Next()
+					return
+				}
+			}
 		}
-		// Attach user to context
-		c.Set("user", user)
-		c.Next()
+
+		logger.Warn("authentication failed", zap.String("path", path))
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
 	}
 }

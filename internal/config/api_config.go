@@ -3,8 +3,10 @@ package config
 import (
 	"fmt"
 	"log"
+	"net/url"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/joho/godotenv"
 )
@@ -20,6 +22,7 @@ type Config struct {
 
 	// Database
 	MongoURI string
+	MongoDB  string
 
 	// RabbitMQ/Queue settings
 	CeleryBrokerURL    string
@@ -60,6 +63,8 @@ type Config struct {
 func LoadConfig() *Config {
 	// Load .env if present
 	_ = godotenv.Load(".env")
+	mongoURI := getEnv("MONGODB_URI", "mongodb://localhost:27017/fraiday-backend")
+	
 	cfg := &Config{
 		// Application settings
 		ProjectName: getEnv("PROJECT_NAME", "API Service"),
@@ -70,7 +75,8 @@ func LoadConfig() *Config {
 		LogLevel:    getEnv("LOG_LEVEL", "INFO"),
 
 		// Database
-		MongoURI: getEnv("MONGODB_URI", "mongodb://localhost:27017/fraiday-backend"),
+		MongoURI: mongoURI,
+		MongoDB:  extractDatabaseFromURI(mongoURI),
 
 		// RabbitMQ/Queue settings
 		CeleryBrokerURL:    getEnv("CELERY_BROKER_URL", ""),
@@ -87,7 +93,7 @@ func LoadConfig() *Config {
 		SlackAIServiceURL:       getEnv("SLACK_AI_SERVICE_URL", ""),
 		SlackAIToken:            getEnv("SLACK_AI_TOKEN", ""),
 		SlackAIServiceWorkflowID: getEnv("SLACK_AI_SERVICE_WORKFLOW_ID", ""),
-		AIServiceURL:            getEnv("AI_SERVICE_URL", ""),
+		AIServiceURL:            getEnv("SLACK_AI_SERVICE_URL", ""),
 		EncryptionKey:           getEnv("ENCRYPTION_KEY", ""),
 		AdminAPIKey:             getEnv("ADMIN_API_KEY", ""),
 
@@ -157,4 +163,34 @@ func getEnvBool(key string, defaultVal bool) bool {
 		return defaultVal
 	}
 	return b
+}
+
+// extractDatabaseFromURI extracts the database name from a MongoDB URI
+func extractDatabaseFromURI(mongoURI string) string {
+	// First check if there's an explicit MONGODB_DB environment variable
+	if dbName := getEnv("MONGODB_DB", ""); dbName != "" {
+		return dbName
+	}
+
+	// Parse the URI to extract database name
+	parsedURI, err := url.Parse(mongoURI)
+	if err != nil {
+		log.Printf("Error parsing MongoDB URI: %v, using default database", err)
+		return "fraiday-backend" // fallback
+	}
+
+	// Remove leading slash from path
+	path := strings.TrimPrefix(parsedURI.Path, "/")
+	
+	// Remove query parameters if any (e.g., ?authSource=admin)
+	if idx := strings.Index(path, "?"); idx != -1 {
+		path = path[:idx]
+	}
+
+	// If path is empty or just "/", use default
+	if path == "" {
+		return "fraiday-backend"
+	}
+
+	return path
 }
