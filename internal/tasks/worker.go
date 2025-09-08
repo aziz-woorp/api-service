@@ -35,6 +35,7 @@ type TaskWorker struct {
 	eventPublisherService     *service.EventPublisherService
 	processorDispatchService  *service.ProcessorDispatchService
 	payloadService            *service.PayloadService
+	chatMessageService        *service.ChatMessageService
 	taskClient                *TaskClient
 	queues                    []string
 	concurrency               int
@@ -44,7 +45,7 @@ type TaskWorker struct {
 }
 
 // NewTaskWorker creates a new task worker
-func NewTaskWorker(rabbitMQURL string, logger *zap.Logger, aiURL, aiToken string, databaseService *service.DatabaseService, eventPublisherService *service.EventPublisherService, payloadService *service.PayloadService) (*TaskWorker, error) {
+func NewTaskWorker(rabbitMQURL string, logger *zap.Logger, aiURL, aiToken string, databaseService *service.DatabaseService, eventPublisherService *service.EventPublisherService, payloadService *service.PayloadService, chatMessageService *service.ChatMessageService) (*TaskWorker, error) {
 	conn, err := amqp.Dial(rabbitMQURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to RabbitMQ: %w", err)
@@ -92,6 +93,7 @@ func NewTaskWorker(rabbitMQURL string, logger *zap.Logger, aiURL, aiToken string
 		eventPublisherService:    eventPublisherService,
 		processorDispatchService: processorDispatchService,
 		payloadService:           payloadService,
+		chatMessageService:       chatMessageService,
 		taskClient:               taskClient,
 		queues:                   []string{"chat_workflow", "events", "default"},
 		concurrency:              10,
@@ -515,7 +517,7 @@ func (tw *TaskWorker) HandleChatWorkflow(ctx context.Context, kwargs map[string]
 		answerData = aiResponse.Data.Answer.AnswerData
 	}
 
-	responseMessage := &service.ChatMessage{
+	responseMessage := &models.ChatMessage{
 		Text:        responseText,                      // Use extracted text
 		Sender:      "fraiday-bot",                    // Add sender field (BOT_SENDER_NAME equivalent)
 		SenderName:  "fraiday-bot",                    // Add sender name field
@@ -534,7 +536,8 @@ func (tw *TaskWorker) HandleChatWorkflow(ctx context.Context, kwargs map[string]
 		},
 	}
 	
-	if err := tw.databaseService.SaveChatMessage(ctx, responseMessage); err != nil {
+	// Use ChatMessageService to create the message (this will publish chat_message_created event)
+	if err := tw.chatMessageService.CreateChatMessage(ctx, responseMessage); err != nil {
 		tw.logger.Error("Failed to save AI response to database", zap.Error(err))
 		// Don't return error here as the AI processing was successful
 	}

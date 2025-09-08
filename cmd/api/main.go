@@ -141,7 +141,7 @@ func runWorker(cfg *config.Config, logger *zap.Logger, mongoClient *mongo.Client
 	chatMessageService.PayloadService = payloadService
 	
 	// Initialize task worker
-	taskWorker, err := tasks.NewTaskWorker(rabbitMQURL, logger, cfg.AIServiceURL, cfg.SlackAIToken, databaseService, eventPublisherService, payloadService)
+	taskWorker, err := tasks.NewTaskWorker(rabbitMQURL, logger, cfg.AIServiceURL, cfg.SlackAIToken, databaseService, eventPublisherService, payloadService, chatMessageService)
 	if err != nil {
 		logger.Fatal("Failed to create task worker", zap.Error(err))
 	}
