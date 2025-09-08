@@ -4,6 +4,7 @@ package service
 import (
 	"context"
 	"errors"
+	"log"
 	"time"
 
 	"github.com/fraiday-org/api-service/internal/api/dto"
@@ -11,7 +12,6 @@ import (
 	"github.com/fraiday-org/api-service/internal/repository"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
-	"go.mongodb.org/mongo-driver/mongo"
 )
 
 type ChatSessionService struct {
@@ -39,64 +39,58 @@ func (s *ChatSessionService) CreateSession(ctx context.Context) (string, error) 
 
 // GetOrCreateSessionBySessionID retrieves or creates a session with proper client/channel association and threading support
 func (s *ChatSessionService) GetOrCreateSessionBySessionID(ctx context.Context, sessionID string, client *models.Client, clientChannel *models.ClientChannel) (*models.ChatSession, string, error) {
+	baseSessionID := s.ThreadManager.GetBaseSessionIDForEvent(sessionID)
+	
 	// Check if threading is enabled for this client
 	threadingEnabled := s.ThreadManager.IsThreadingEnabledForClient(ctx, client)
 	
 	if threadingEnabled {
-		// Parse session ID to check if it's a thread session ID
-		baseSessionID, threadID := s.ThreadManager.ParseSessionID(sessionID)
+		// Only use thread management when threading is explicitly enabled
+		log.Printf("[ChatSessionService] Using thread management for message in session %s", baseSessionID)
 		
-		// Try to find existing base session by session_id
-		baseSession, err := s.Repo.GetBySessionID(ctx, baseSessionID)
-		if err != nil && err != mongo.ErrNoDocuments {
+		// Use thread management - this will handle creating threaded sessions
+		// Pass -1 to indicate use client's configured inactivity_minutes
+		threadedSession, err := s.ThreadManager.GetOrCreateActiveThread(ctx, sessionID, client, clientChannel, false, -1)
+		if err != nil {
 			return nil, "", err
 		}
-		
-		// If base session doesn't exist, create it
-		if baseSession == nil {
-			baseSession = &models.ChatSession{
-				SessionID:     baseSessionID,
-				Active:        true,
-				Client:        &client.ID,
-				ClientChannel: &clientChannel.ID,
-			}
-			if err := s.Repo.Create(ctx, baseSession); err != nil {
-				return nil, "", err
-			}
+		if threadedSession != nil {
+			// Return the threaded session with its session_id (format: parent_id#thread_id)
+			log.Printf("[ChatSessionService] Message assigned to thread session: %s", threadedSession.SessionID)
+			return threadedSession, threadedSession.SessionID, nil
 		}
 		
-		// Handle thread management
-		if threadID != "" {
-			// Specific thread requested - try to get it
-			thread, err := s.ThreadManager.GetOrCreateActiveThread(ctx, sessionID, false, 0)
-			if err != nil {
-				return nil, "", err
-			}
-			if thread != nil {
-				return baseSession, thread.ThreadSessionID, nil
-			}
-		} else {
-			// Get or create active thread for base session
-			thread, err := s.ThreadManager.GetOrCreateActiveThread(ctx, baseSessionID, false, 0)
-			if err != nil {
-				return nil, "", err
-			}
-			if thread != nil {
-				return baseSession, thread.ThreadSessionID, nil
-			}
+		// Fallback: create regular session if threading failed
+		session, err := s.Repo.GetBySessionID(ctx, sessionID)
+		if err == nil {
+			return session, session.SessionID, nil
 		}
 		
-		// Return base session if no threading
-		return baseSession, baseSession.SessionID, nil
+		// Create new regular session
+		session = &models.ChatSession{
+			SessionID:     sessionID,
+			Active:        true,
+			Client:        &client.ID,
+			ClientChannel: &clientChannel.ID,
+		}
+		if err := s.Repo.Create(ctx, session); err != nil {
+			return nil, "", err
+		}
+		return session, session.SessionID, nil
+	} else {
+		// For clients without threading - use traditional session handling
+		log.Printf("[ChatSessionService] Using standard session handling for message in session %s", baseSessionID)
 	}
 	
 	// Non-threaded mode: standard session handling
 	session, err := s.Repo.GetBySessionID(ctx, sessionID)
 	if err == nil {
+		log.Printf("[ChatSessionService] Using existing session %s", sessionID)
 		return session, session.SessionID, nil
 	}
 	
 	// If not found, create new session with client/channel association
+	log.Printf("[ChatSessionService] Creating new standard session %s", sessionID)
 	session = &models.ChatSession{
 		SessionID:     sessionID,
 		Active:        true,

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -59,16 +60,37 @@ func (tm *ThreadManagerService) GetBaseSessionIDForEvent(sessionID string) strin
 // IsThreadingEnabledForClient checks if threading is enabled for a client
 func (tm *ThreadManagerService) IsThreadingEnabledForClient(ctx context.Context, client *models.Client) bool {
 	if client == nil {
+		log.Printf("[ThreadManager] Client is nil, threading disabled")
 		return false
 	}
 
-	// Check if thread_config exists and is enabled
-	if threadConfig, exists := client.Config["thread_config"]; exists {
-		if config, ok := threadConfig.(map[string]interface{}); ok {
-			if enabled, ok := config["enabled"].(bool); ok {
-				return enabled
+	log.Printf("[ThreadManager] Checking threading for client %s (client_id: %s)", client.ID.Hex(), client.ClientID)
+	log.Printf("[ThreadManager] Client ThreadConfig: %+v", client.ThreadConfig)
+
+	// Check if thread_config exists at root level and is enabled
+	if client.ThreadConfig != nil {
+		log.Printf("[ThreadManager] Found ThreadConfig: %+v", client.ThreadConfig)
+		if enabled, ok := client.ThreadConfig["enabled"].(bool); ok {
+			log.Printf("[ThreadManager] Threading enabled: %v", enabled)
+			return enabled
+		} else {
+			log.Printf("[ThreadManager] 'enabled' field not found or not boolean in ThreadConfig")
+		}
+	} else {
+		log.Printf("[ThreadManager] No ThreadConfig found at root level")
+		
+		// Fallback: check if thread_config exists in Config field (for backward compatibility)
+		if threadConfig, exists := client.Config["thread_config"]; exists {
+			log.Printf("[ThreadManager] Found thread_config in Config: %+v", threadConfig)
+			if config, ok := threadConfig.(map[string]interface{}); ok {
+				log.Printf("[ThreadManager] thread_config is map: %+v", config)
+				if enabled, ok := config["enabled"].(bool); ok {
+					log.Printf("[ThreadManager] Threading enabled (from Config): %v", enabled)
+					return enabled
+				}
 			}
 		}
+		log.Printf("[ThreadManager] No thread_config found in either ThreadConfig or Config")
 	}
 	return false
 }
@@ -118,16 +140,11 @@ func (tm *ThreadManagerService) IsThreadingEnabledForSession(ctx context.Context
 
 // GetLatestThread gets the latest thread for a parent session
 func (tm *ThreadManagerService) GetLatestThread(ctx context.Context, parentSessionID string) (*models.ChatSessionThread, error) {
-	parentObjID, err := primitive.ObjectIDFromHex(parentSessionID)
-	if err != nil {
-		return nil, fmt.Errorf("invalid parent session ID: %w", err)
-	}
-
-	filter := bson.M{"parent_session_id": parentObjID}
-	opts := options.FindOne().SetSort(bson.D{{Key: "created_at", Value: -1}})
+	filter := bson.M{"parent_session_id": parentSessionID}
+	opts := options.FindOne().SetSort(bson.D{{Key: "last_activity", Value: -1}})
 
 	var thread models.ChatSessionThread
-	err = tm.chatSessionThreadCollection.FindOne(ctx, filter, opts).Decode(&thread)
+	err := tm.chatSessionThreadCollection.FindOne(ctx, filter, opts).Decode(&thread)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
 			return nil, nil
@@ -136,6 +153,73 @@ func (tm *ThreadManagerService) GetLatestThread(ctx context.Context, parentSessi
 	}
 
 	return &thread, nil
+}
+
+// getExistingThreadedSessions checks if any threaded sessions exist for a base session ID
+func (tm *ThreadManagerService) getExistingThreadedSessions(ctx context.Context, baseSessionID string) ([]*models.ChatSession, error) {
+	// Look for sessions that start with baseSessionID# (threaded sessions)
+	filter := bson.M{"session_id": bson.M{"$regex": "^" + baseSessionID + "#"}}
+	cursor, err := tm.chatSessionCollection.Find(ctx, filter)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find existing threaded sessions: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	var sessions []*models.ChatSession
+	if err = cursor.All(ctx, &sessions); err != nil {
+		return nil, fmt.Errorf("failed to decode threaded sessions: %w", err)
+	}
+
+	return sessions, nil
+}
+
+// createFirstThread creates the first thread for a new session (matching Python behavior)
+func (tm *ThreadManagerService) createFirstThread(ctx context.Context, baseSessionID string, client *models.Client, clientChannel *models.ClientChannel) (*models.ChatSession, error) {
+	// Generate a thread ID (8 characters like Python)
+	threadID := primitive.NewObjectID().Hex()[:8]
+	threadedSessionID := tm.FormatThreadSessionID(baseSessionID, threadID)
+
+	log.Printf("[ThreadManager] Creating first thread %s for new session %s", threadID, baseSessionID)
+
+	// Create the session with thread ID
+	now := time.Now().UTC()
+	session := &models.ChatSession{
+		SessionID:     threadedSessionID,
+		Active:        true,
+		Client:        &client.ID,
+		ClientChannel: &clientChannel.ID,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}
+
+	// Insert the threaded session
+	result, err := tm.chatSessionCollection.InsertOne(ctx, session)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create threaded session: %w", err)
+	}
+
+	// Set the generated ObjectID back to the session
+	if oid, ok := result.InsertedID.(primitive.ObjectID); ok {
+		session.ID = oid
+	}
+
+	// Create thread tracking record
+	thread := &models.ChatSessionThread{
+		ThreadID:         threadID,
+		ThreadSessionID:  threadedSessionID,
+		ParentSessionID:  baseSessionID,
+		ChatSessionID:    session.ID,
+		Active:           true,
+		LastActivity:     now,
+	}
+
+	_, err = tm.chatSessionThreadCollection.InsertOne(ctx, thread)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create thread tracking record: %w", err)
+	}
+
+	log.Printf("[ThreadManager] Created first thread %s with session_id %s", threadID, threadedSessionID)
+	return session, nil
 }
 
 // IsThreadActive checks if a thread is active based on inactivity minutes
@@ -193,8 +277,8 @@ func (tm *ThreadManagerService) DeactivateThread(ctx context.Context, thread *mo
 	return nil
 }
 
-// CloseActiveThreads closes all active threads for a parent session
-func (tm *ThreadManagerService) CloseActiveThreads(ctx context.Context, parentSessionID string) error {
+// CloseActiveThreads closes all active threads for a parent session and returns count
+func (tm *ThreadManagerService) CloseActiveThreads(ctx context.Context, parentSessionID string) (int, error) {
 	now := time.Now().UTC()
 	filter := bson.M{
 		"parent_session_id": parentSessionID,
@@ -207,98 +291,259 @@ func (tm *ThreadManagerService) CloseActiveThreads(ctx context.Context, parentSe
 		},
 	}
 
-	_, err := tm.chatSessionThreadCollection.UpdateMany(ctx, filter, update)
+	result, err := tm.chatSessionThreadCollection.UpdateMany(ctx, filter, update)
 	if err != nil {
-		return fmt.Errorf("failed to close active threads: %w", err)
+		return 0, fmt.Errorf("failed to close active threads: %w", err)
 	}
 
-	return nil
+	return int(result.ModifiedCount), nil
 }
 
-// CreateNewThread creates a new thread for a parent session
-func (tm *ThreadManagerService) CreateNewThread(ctx context.Context, parentSessionID string) (*models.ChatSessionThread, error) {
-	// Get parent session to inherit properties
-	parentSession, err := tm.GetChatSession(ctx, parentSessionID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get parent session: %w", err)
-	}
-	if parentSession == nil {
-		return nil, fmt.Errorf("parent session not found")
-	}
+// CreateNewThread creates a new thread for an existing session context
+// This creates both a ChatSessionThread record and a new ChatSession with threaded session_id
+// Note: In threading, there's no separate "parent session" - we create threads directly
+func (tm *ThreadManagerService) CreateNewThread(ctx context.Context, baseSessionID string, client *models.Client, clientChannel *models.ClientChannel) (*models.ChatSession, error) {
+	log.Printf("[ThreadManager] CreateNewThread called for baseSessionID: %s", baseSessionID)
+	
+	// We don't need a "parent session" - threads are the actual sessions
+	// The baseSessionID is just used as an identifier for grouping threads
 
-	// Close any existing active threads
-	err = tm.CloseActiveThreads(ctx, parentSessionID)
+	// Deactivate any existing active threads for this base session
+	log.Printf("[ThreadManager] Deactivating existing active threads for session %s", baseSessionID)
+	deactivatedCount, err := tm.CloseActiveThreads(ctx, baseSessionID)
 	if err != nil {
+		log.Printf("[ThreadManager] ERROR: Failed to close active threads for %s: %v", baseSessionID, err)
 		return nil, fmt.Errorf("failed to close active threads: %w", err)
 	}
+	if deactivatedCount > 0 {
+		log.Printf("[ThreadManager] Deactivated %d existing active threads for session %s", deactivatedCount, baseSessionID)
+	}
 
-	// Generate thread ID and session ID
-	threadID := primitive.NewObjectID().Hex()
-	threadSessionID := tm.FormatThreadSessionID(parentSessionID, threadID)
+	// Generate new thread ID (8 characters like Python)
+	threadID := primitive.NewObjectID().Hex()[:8]
+	threadSessionID := tm.FormatThreadSessionID(baseSessionID, threadID)
 
-	// Create new thread
+	log.Printf("[ThreadManager] Creating new thread: %s for session %s, threaded session_id: %s", threadID, baseSessionID, threadSessionID)
+
+	// Create new ChatSession with threaded session_id (matching Python behavior)
 	now := time.Now().UTC()
+	newChatSession := &models.ChatSession{
+		SessionID:     threadSessionID,
+		Active:        true,
+		Client:        &client.ID,
+		ClientChannel: &clientChannel.ID,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}
+
+	log.Printf("[ThreadManager] Inserting new threaded ChatSession with session_id: %s", threadSessionID)
+	// Insert the new chat session
+	result, err := tm.chatSessionCollection.InsertOne(ctx, newChatSession)
+	if err != nil {
+		log.Printf("[ThreadManager] ERROR: Failed to create threaded chat session: %v", err)
+		return nil, fmt.Errorf("failed to create threaded chat session: %w", err)
+	}
+
+	// Set the generated ObjectID back to the session
+	if oid, ok := result.InsertedID.(primitive.ObjectID); ok {
+		newChatSession.ID = oid
+		log.Printf("[ThreadManager] Assigned ObjectID %s to new ChatSession", oid.Hex())
+	}
+
+	// Create thread tracking record
 	thread := &models.ChatSessionThread{
 		ThreadID:         threadID,
 		ThreadSessionID:  threadSessionID,
-		ParentSessionID:  parentSessionID,
-		ChatSessionID:    parentSession.ID,
+		ParentSessionID:  baseSessionID,
+		ChatSessionID:    newChatSession.ID,
 		Active:           true,
 		LastActivity:     now,
 	}
 
+	log.Printf("[ThreadManager] Creating ChatSessionThread tracking record for thread %s", threadID)
 	_, err = tm.chatSessionThreadCollection.InsertOne(ctx, thread)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create thread: %w", err)
+		log.Printf("[ThreadManager] ERROR: Failed to create thread tracking record: %v", err)
+		return nil, fmt.Errorf("failed to create thread tracking record: %w", err)
 	}
 
-	return thread, nil
+	log.Printf("[ThreadManager] Created new thread: %s for session %s with threaded session_id: %s", threadID, baseSessionID, threadSessionID)
+	return newChatSession, nil
 }
 
 // GetOrCreateActiveThread gets or creates an active thread for a session
-func (tm *ThreadManagerService) GetOrCreateActiveThread(ctx context.Context, sessionID string, forceNew bool, inactivityMinutes int) (*models.ChatSessionThread, error) {
-	baseSessionID, threadID := tm.ParseSessionID(sessionID)
+// Core function to handle thread management logic for both new and existing sessions.
+// This unified method can:
+// 1. Create a new session + thread when none exists yet
+// 2. Find or create a new thread for an existing session
+// Matches Python ThreadManager.get_or_create_active_thread exactly
+func (tm *ThreadManagerService) GetOrCreateActiveThread(ctx context.Context, sessionID string, client *models.Client, clientChannel *models.ClientChannel, forceNew bool, inactivityMinutes int) (*models.ChatSession, error) {
+	// Parse session ID to get base ID (removing any thread part)
+	baseSessionID, _ := tm.ParseSessionID(sessionID)
 
-	// Check if threading is enabled for this session
-	enabled, err := tm.IsThreadingEnabledForSession(ctx, baseSessionID)
+	log.Printf("[ThreadManager] Processing session %s, base: %s", sessionID, baseSessionID)
+
+	// First, check if any sessions exist with this base ID
+	existingSessions, err := tm.getExistingThreadedSessions(ctx, baseSessionID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to check threading status: %w", err)
+		return nil, fmt.Errorf("failed to check existing sessions: %w", err)
 	}
-	if !enabled {
-		return nil, nil // Threading not enabled
-	}
+	sessionExists := len(existingSessions) > 0
 
-	// If specific thread ID provided, try to get it
-	if threadID != "" {
-		threadObjID, err := primitive.ObjectIDFromHex(threadID)
-		if err != nil {
-			return nil, fmt.Errorf("invalid thread ID: %w", err)
-		}
-
-		var thread models.ChatSessionThread
-		err = tm.chatSessionThreadCollection.FindOne(ctx, bson.M{"_id": threadObjID}).Decode(&thread)
-		if err != nil {
-			if err == mongo.ErrNoDocuments {
-				return nil, fmt.Errorf("thread not found")
+	// If client wasn't provided, try to get it from existing sessions
+	if client == nil && sessionExists {
+		if existingSessions[0].Client != nil {
+			// Get client from existing session
+			var clientObj models.Client
+			err = tm.clientCollection.FindOne(ctx, bson.M{"_id": *existingSessions[0].Client}).Decode(&clientObj)
+			if err == nil {
+				client = &clientObj
 			}
-			return nil, fmt.Errorf("failed to find thread: %w", err)
 		}
-
-		return &thread, nil
 	}
 
-	// Get latest thread
+	// If client_channel wasn't provided, try to get it from existing sessions
+	if clientChannel == nil && sessionExists {
+		if existingSessions[0].ClientChannel != nil {
+			// Get client channel from existing session
+			var channelObj models.ClientChannel
+			err = tm.clientCollection.Database().Collection("client_channels").FindOne(ctx, bson.M{"_id": *existingSessions[0].ClientChannel}).Decode(&channelObj)
+			if err == nil {
+				clientChannel = &channelObj
+			}
+		}
+	}
+
+	// If we have no sessions and no client was provided, we can't proceed
+	if !sessionExists && client == nil {
+		return nil, fmt.Errorf("cannot create a thread without either an existing session or a client object")
+	}
+
+	// Check if threading is enabled for this client
+	threadingEnabled := tm.IsThreadingEnabledForClient(ctx, client)
+	var clientInactivityMinutes int
+
+	if threadingEnabled {
+		// Get inactivity minutes from client ThreadConfig (root level)
+		if client.ThreadConfig != nil {
+			if minutes, ok := client.ThreadConfig["inactivity_minutes"].(float64); ok {
+				clientInactivityMinutes = int(minutes)
+				log.Printf("[ThreadManager] Got inactivity_minutes from ThreadConfig (float64): %d", clientInactivityMinutes)
+			} else if minutes, ok := client.ThreadConfig["inactivity_minutes"].(int); ok {
+				clientInactivityMinutes = minutes
+				log.Printf("[ThreadManager] Got inactivity_minutes from ThreadConfig (int): %d", clientInactivityMinutes)
+			} else if minutes, ok := client.ThreadConfig["inactivity_minutes"].(int32); ok {
+				clientInactivityMinutes = int(minutes)
+				log.Printf("[ThreadManager] Got inactivity_minutes from ThreadConfig (int32): %d", clientInactivityMinutes)
+			} else {
+				log.Printf("[ThreadManager] Could not parse inactivity_minutes from ThreadConfig: %+v (type: %T)", client.ThreadConfig["inactivity_minutes"], client.ThreadConfig["inactivity_minutes"])
+			}
+		}
+		
+		// Fallback: check Config field for backward compatibility
+		if clientInactivityMinutes <= 0 {
+			if threadConfig, exists := client.Config["thread_config"]; exists {
+				if config, ok := threadConfig.(map[string]interface{}); ok {
+					if minutes, ok := config["inactivity_minutes"].(float64); ok {
+						clientInactivityMinutes = int(minutes)
+					}
+				}
+			}
+		}
+		
+		if clientInactivityMinutes <= 0 {
+			clientInactivityMinutes = 1440 // Default 24 hours
+		}
+		log.Printf("[ThreadManager] Threading enabled for client %s with inactivity_minutes=%d", client.ID.Hex(), clientInactivityMinutes)
+	} else {
+		log.Printf("[ThreadManager] Threading disabled for client %s", client.ID.Hex())
+	}
+
+	// If threading is disabled, handle it directly
+	if !threadingEnabled {
+		// No threading, check if session exists
+		var session models.ChatSession
+		err = tm.chatSessionCollection.FindOne(ctx, bson.M{"session_id": baseSessionID}).Decode(&session)
+		if err == nil {
+			log.Printf("[ThreadManager] Using existing non-threaded session %s", baseSessionID)
+			return &session, nil
+		}
+
+		// Create a new regular session
+		if client != nil {
+			log.Printf("[ThreadManager] Creating new non-threaded session %s", baseSessionID)
+			now := time.Now().UTC()
+			session = models.ChatSession{
+				SessionID:     baseSessionID,
+				Active:        true,
+				Client:        &client.ID,
+				ClientChannel: &clientChannel.ID,
+				CreatedAt:     now,
+				UpdatedAt:     now,
+			}
+			_, err = tm.chatSessionCollection.InsertOne(ctx, &session)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create session: %w", err)
+			}
+			return &session, nil
+		} else {
+			return nil, fmt.Errorf("cannot create session: threading is disabled and no session exists")
+		}
+	}
+
+	// Threading is enabled - check if we need to use existing thread or create new one
+
+	// Use client-specific inactivity minutes or provided default
+	log.Printf("[ThreadManager] Input inactivityMinutes: %d, clientInactivityMinutes: %d", inactivityMinutes, clientInactivityMinutes)
+	if inactivityMinutes <= 0 {
+		inactivityMinutes = clientInactivityMinutes
+	}
+	log.Printf("[ThreadManager] Final inactivityMinutes: %d", inactivityMinutes)
+
+	// Get latest thread for this parent session
 	latestThread, err := tm.GetLatestThread(ctx, baseSessionID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get latest thread: %w", err)
 	}
 
-	// If force new or no active thread exists, create new one
-	if forceNew || latestThread == nil || !tm.IsThreadActive(latestThread, inactivityMinutes) {
-		return tm.CreateNewThread(ctx, baseSessionID)
+	// Check if we have a latest thread but it's inactive
+	if latestThread != nil && !tm.IsThreadActive(latestThread, inactivityMinutes) && !forceNew {
+		log.Printf("[ThreadManager] Found inactive thread %s for session %s (inactive for more than %d minutes)", 
+			latestThread.ThreadID, baseSessionID, inactivityMinutes)
 	}
 
-	return latestThread, nil
+	// Use existing thread if active and not forcing new
+	if !forceNew && latestThread != nil && tm.IsThreadActive(latestThread, inactivityMinutes) {
+		// Get the threaded ChatSession
+		var threadedSession models.ChatSession
+		err = tm.chatSessionCollection.FindOne(ctx, bson.M{"session_id": latestThread.ThreadSessionID}).Decode(&threadedSession)
+		if err != nil {
+			return nil, fmt.Errorf("failed to find threaded session: %w", err)
+		}
+
+		// Update activity timestamp
+		now := time.Now().UTC()
+		_, err = tm.chatSessionThreadCollection.UpdateOne(ctx,
+			bson.M{"_id": latestThread.ID},
+			bson.M{"$set": bson.M{"last_activity": now}})
+		if err != nil {
+			return nil, fmt.Errorf("failed to update thread activity: %w", err)
+		}
+
+		log.Printf("[ThreadManager] Using existing active thread %s for session %s", latestThread.ThreadID, baseSessionID)
+		return &threadedSession, nil
+	}
+
+	// Check if this is a new session or we're creating a new thread for existing session
+	if !sessionExists {
+		// Creating first thread for a new session
+		log.Printf("[ThreadManager] Creating first thread for new session %s", baseSessionID)
+		return tm.createFirstThread(ctx, baseSessionID, client, clientChannel)
+	} else {
+		// Create a new thread for existing session
+		log.Printf("[ThreadManager] Creating new thread for existing session %s", baseSessionID)
+		return tm.CreateNewThread(ctx, baseSessionID, client, clientChannel)
+	}
 }
 
 // ListThreads lists all threads for a parent session
