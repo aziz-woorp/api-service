@@ -120,6 +120,22 @@ func (s *EventService) GetEventsByEntityID(
 	return events, nil
 }
 
+// GetEntityEvents retrieves events for a specific entity type and ID (alias for GetEventsByEntityID)
+func (s *EventService) GetEntityEvents(ctx context.Context, entityType models.EntityType, entityID string) ([]*models.Event, error) {
+	events, err := s.GetEventsByEntityID(ctx, entityType, entityID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert to pointer slice to match expected signature
+	result := make([]*models.Event, len(events))
+	for i := range events {
+		result[i] = &events[i]
+	}
+
+	return result, nil
+}
+
 // GetChildEvents retrieves all child events for a parent event.
 func (s *EventService) GetChildEvents(ctx context.Context, parentID string) ([]models.Event, error) {
 	filter := map[string]interface{}{

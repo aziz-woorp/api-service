@@ -31,6 +31,16 @@ func Register(r *gin.Engine, cfg *config.Config, logger *zap.Logger, mongoClient
 	metricsHandler := handlers.NewMetricsHandler(logger)
 	r.GET("/api/v1/metrics", metricsHandler.GetMetrics)
 
+	// Clients (moved up for use in message creation)
+	clientRepo := repository.NewClientRepository(db)
+	clientService := service.NewClientService(clientRepo)
+	clientHandler := handlers.NewClientHandler(clientService)
+	
+	// Client Channels
+	clientChannelRepo := repository.NewClientChannelRepository(db)
+	clientChannelService := service.NewClientChannelService(clientChannelRepo, clientRepo)
+	clientChannelHandler := handlers.NewClientChannelHandler(logger)
+
 	// Chat Sessions
 	chatSessionRepo := repository.NewChatSessionRepository(db)
 	chatSessionService := service.NewChatSessionService(chatSessionRepo)
@@ -39,7 +49,7 @@ func Register(r *gin.Engine, cfg *config.Config, logger *zap.Logger, mongoClient
 	// Chat Messages
 	chatMsgRepo := repository.NewChatMessageRepository(db)
 	chatMsgService := service.NewChatMessageService(chatMsgRepo)
-	chatMsgHandler := handlers.NewChatMessageHandler(chatMsgService, chatSessionService)
+	chatMsgHandler := handlers.NewChatMessageHandler(chatMsgService, chatSessionService, clientService, clientChannelService)
 
 	r.POST("/api/v1/messages", chatMsgHandler.CreateMessage)
 	r.GET("/api/v1/messages", chatMsgHandler.ListMessages)
@@ -85,17 +95,12 @@ func Register(r *gin.Engine, cfg *config.Config, logger *zap.Logger, mongoClient
 	r.GET("/api/v1/analytics/bot-engagement", analyticsHandler.GetBotEngagementMetrics)
 	r.GET("/api/v1/analytics/containment-rate", analyticsHandler.GetContainmentRateMetrics)
 
-	// Clients
-	clientRepo := repository.NewClientRepository(db)
-	clientService := service.NewClientService(clientRepo)
-	clientHandler := handlers.NewClientHandler(clientService)
-
+	// Client endpoints (using services defined earlier)
 	r.POST("/api/v1/clients", clientHandler.CreateClient)
 	r.GET("/api/v1/clients", clientHandler.ListClients)
 	r.PUT("/api/v1/clients/:client_id", clientHandler.UpdateClient)
 
-	// Client Channels
-	clientChannelHandler := handlers.NewClientChannelHandler(logger)
+	// Client Channel endpoints (using handler defined earlier)
 	r.POST("/api/v1/clients/:client_id/channels", clientChannelHandler.CreateChannel)
 	r.GET("/api/v1/clients/:client_id/channels", clientChannelHandler.ListChannels)
 	r.GET("/api/v1/clients/:client_id/channels/:channel_id", clientChannelHandler.GetChannel)

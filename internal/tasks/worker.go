@@ -12,29 +12,34 @@ import (
 
 	amqp "github.com/rabbitmq/amqp091-go"
 	"go.uber.org/zap"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"github.com/fraiday-org/api-service/internal/models"
 	"github.com/fraiday-org/api-service/internal/service"
 )
 
 const (
-	TypeChatWorkflow      = "chat_workflow"
-	TypeSuggestionWorkflow = "suggestion_workflow"
-	TypeEventProcessor    = "event_processor"
+	TypeChatWorkflow         = "chat_workflow"
+	TypeSuggestionWorkflow   = "suggestion_workflow"
+	TypeEventProcessor       = "event_processor"
+	TypeProcessEvent         = "process_event"
+	TypeDeliverToProcessor   = "deliver_to_processor"
 )
 
 // TaskWorker wraps RabbitMQ connection for task processing
 type TaskWorker struct {
-	conn                   *amqp.Connection
-	channel                *amqp.Channel
-	logger                 *zap.Logger
-	aiService              *service.AIService
-	databaseService        *service.DatabaseService
-	eventPublisherService  *service.EventPublisherService
-	queues                 []string
-	concurrency            int
-	wg                     sync.WaitGroup
-	ctx                    context.Context
-	cancel                 context.CancelFunc
+	conn                      *amqp.Connection
+	channel                   *amqp.Channel
+	logger                    *zap.Logger
+	aiService                 *service.AIService
+	databaseService           *service.DatabaseService
+	eventPublisherService     *service.EventPublisherService
+	processorDispatchService  *service.ProcessorDispatchService
+	taskClient                *TaskClient
+	queues                    []string
+	concurrency               int
+	wg                        sync.WaitGroup
+	ctx                       context.Context
+	cancel                    context.CancelFunc
 }
 
 // NewTaskWorker creates a new task worker
@@ -66,18 +71,30 @@ func NewTaskWorker(rabbitMQURL string, logger *zap.Logger, aiURL, aiToken string
 
 	// Initialize AI service
 	aiService := service.NewAIService(logger, aiURL, aiToken)
+	
+	// Initialize ProcessorDispatchService
+	processorDispatchService := service.NewProcessorDispatchService(logger, conn)
+	
+	// Initialize TaskClient for enqueueing tasks
+	taskClient, err := NewTaskClient(rabbitMQURL, logger)
+	if err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("failed to create task client: %w", err)
+	}
 
 	return &TaskWorker{
-		conn:                  conn,
-		channel:               channel,
-		logger:                logger,
-		aiService:             aiService,
-		databaseService:       databaseService,
-		eventPublisherService: eventPublisherService,
-		queues:                []string{"chat_workflow", "events", "default"},
-		concurrency:           10,
-		ctx:                   ctx,
-		cancel:                cancel,
+		conn:                     conn,
+		channel:                  channel,
+		logger:                   logger,
+		aiService:                aiService,
+		databaseService:          databaseService,
+		eventPublisherService:    eventPublisherService,
+		processorDispatchService: processorDispatchService,
+		taskClient:               taskClient,
+		queues:                   []string{"chat_workflow", "events", "default"},
+		concurrency:              10,
+		ctx:                      ctx,
+		cancel:                   cancel,
 	}, nil
 }
 
@@ -245,11 +262,33 @@ func (tw *TaskWorker) processMessage(msg amqp.Delivery, queueName string, worker
 			zap.Duration("duration", time.Since(start)),
 			zap.Error(err))
 		
-		// Check retry count
+		// Check retry count and handle exponential backoff for delivery tasks
 		retries, _ := celeryMsg["retries"].(float64)
-		if retries < 3 { // Max 3 retries
-			msg.Nack(false, true) // Requeue for retry
+		maxRetries := 3
+		
+		// For deliver_to_processor tasks, use exponential backoff retry logic
+		if taskType == TypeDeliverToProcessor && retries < float64(maxRetries) {
+			// Calculate countdown for exponential backoff: 60s, 120s, 240s
+			countdown := time.Duration(60 * (1 << int(retries))) * time.Second
+			
+			tw.logger.Info("Scheduling retry with exponential backoff",
+				zap.String("task_id", taskID),
+				zap.String("task_type", taskType),
+				zap.Int("retry", int(retries)+1),
+				zap.Int("max_retries", maxRetries),
+				zap.Duration("countdown", countdown))
+			
+			// For exponential backoff, we need to publish a delayed task
+			// Since RabbitMQ doesn't natively support delayed messages, we'll use TTL + DLX
+			tw.scheduleRetry(msg, taskType, kwargs, int(retries)+1, countdown)
+			msg.Ack(false) // Ack the original message
+		} else if retries < float64(maxRetries) {
+			msg.Nack(false, true) // Requeue for immediate retry for other task types
 		} else {
+			tw.logger.Error("All retries exhausted, sending to DLQ",
+				zap.String("task_id", taskID),
+				zap.String("task_type", taskType),
+				zap.Int("retries", int(retries)))
 			msg.Nack(false, false) // Don't requeue, send to DLQ
 		}
 	} else {
@@ -261,6 +300,68 @@ func (tw *TaskWorker) processMessage(msg amqp.Delivery, queueName string, worker
 	}
 }
 
+// scheduleRetry schedules a task for retry with exponential backoff
+func (tw *TaskWorker) scheduleRetry(originalMsg amqp.Delivery, taskType string, kwargs map[string]interface{}, retryCount int, countdown time.Duration) {
+	// Create retry message with updated retry count
+	message := map[string]interface{}{
+		"id":      fmt.Sprintf("%d", time.Now().UnixNano()),
+		"task":    taskType,
+		"args":    []interface{}{},
+		"kwargs":  kwargs,
+		"retries": retryCount,
+		"eta":     nil,
+		"expires": nil,
+	}
+
+	messageBytes, err := json.Marshal(message)
+	if err != nil {
+		tw.logger.Error("Failed to marshal retry message", zap.Error(err))
+		return
+	}
+
+	// Create a temporary queue with TTL for delayed execution
+	delayedQueueName := fmt.Sprintf("events_delayed_%d", time.Now().UnixNano())
+	
+	// Declare temporary queue with TTL and DLX pointing back to events queue
+	_, err = tw.channel.QueueDeclare(
+		delayedQueueName,
+		false, // not durable (temporary)
+		true,  // delete when unused
+		false, // not exclusive
+		false, // no-wait
+		amqp.Table{
+			"x-message-ttl":             int64(countdown.Milliseconds()),
+			"x-dead-letter-exchange":    "",
+			"x-dead-letter-routing-key": "events",
+		},
+	)
+	if err != nil {
+		tw.logger.Error("Failed to declare delayed queue", zap.Error(err))
+		return
+	}
+
+	// Publish message to delayed queue
+	err = tw.channel.Publish(
+		"",               // exchange
+		delayedQueueName, // routing key (queue name)
+		false,            // mandatory
+		false,            // immediate
+		amqp.Publishing{
+			ContentType: "application/json",
+			Body:        messageBytes,
+		},
+	)
+	if err != nil {
+		tw.logger.Error("Failed to publish retry message", zap.Error(err))
+		return
+	}
+
+	tw.logger.Info("Scheduled retry message",
+		zap.String("queue", delayedQueueName),
+		zap.Duration("delay", countdown),
+		zap.Int("retry_count", retryCount))
+}
+
 // handleTask routes tasks to appropriate handlers
 func (tw *TaskWorker) handleTask(ctx context.Context, taskType string, kwargs map[string]interface{}) error {
 	switch taskType {
@@ -270,6 +371,10 @@ func (tw *TaskWorker) handleTask(ctx context.Context, taskType string, kwargs ma
 		return tw.HandleSuggestionWorkflow(ctx, kwargs)
 	case TypeEventProcessor:
 		return tw.HandleEventProcessor(ctx, kwargs)
+	case TypeProcessEvent:
+		return tw.HandleProcessEvent(ctx, kwargs)
+	case TypeDeliverToProcessor:
+		return tw.HandleDeliverToProcessor(ctx, kwargs)
 	default:
 		return fmt.Errorf("unknown task type: %s", taskType)
 	}
@@ -573,33 +678,275 @@ func (tw *TaskWorker) HandleEventProcessor(ctx context.Context, kwargs map[strin
 	return nil
 }
 
+// HandleProcessEvent handles process_event tasks (matching Python logic)
+// This mirrors the process_event task from Python backend
+func (tw *TaskWorker) HandleProcessEvent(ctx context.Context, kwargs map[string]interface{}) error {
+	// Parse payload
+	payloadBytes, err := json.Marshal(kwargs)
+	if err != nil {
+		return fmt.Errorf("failed to marshal kwargs: %w", err)
+	}
+
+	var payload ProcessEventPayload
+	if err := json.Unmarshal(payloadBytes, &payload); err != nil {
+		return fmt.Errorf("failed to unmarshal process event payload: %w", err)
+	}
+
+	tw.logger.Info("Processing process_event task",
+		zap.String("event_id", payload.EventID),
+		zap.String("event_type", payload.EventType),
+		zap.String("entity_type", payload.EntityType),
+		zap.String("entity_id", payload.EntityID))
+
+	// Get the original event from database
+	event, err := tw.eventPublisherService.EventService.GetEventByID(ctx, payload.EventID)
+	if err != nil {
+		tw.logger.Error("Event not found", zap.String("event_id", payload.EventID), zap.Error(err))
+		return fmt.Errorf("event %s not found: %w", payload.EventID, err)
+	}
+
+	// Get client_id from the entity
+	clientID, err := tw.getClientIDForEntity(ctx, payload.EntityType, payload.EntityID)
+	if err != nil {
+		tw.logger.Error("Could not determine client_id", 
+			zap.String("entity_type", payload.EntityType),
+			zap.String("entity_id", payload.EntityID),
+			zap.Error(err))
+		return fmt.Errorf("client ID not found: %w", err)
+	}
+
+	tw.logger.Info("Resolved client for event", 
+		zap.String("event_id", payload.EventID),
+		zap.String("client_id", clientID))
+
+	// Convert clientID to ObjectID
+	clientObjID, err := primitive.ObjectIDFromHex(clientID)
+	if err != nil {
+		return fmt.Errorf("invalid client ID format: %w", err)
+	}
+
+	// Find matching processors for this event
+	processors, err := tw.eventPublisherService.EventProcessorConfigService.GetConfigsForEventAndClient(
+		ctx, clientObjID, models.EventType(payload.EventType), models.EntityType(payload.EntityType),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to get matching processors: %w", err)
+	}
+
+	if len(processors) == 0 {
+		tw.logger.Info("No matching processors found",
+			zap.String("event_type", payload.EventType),
+			zap.String("client_id", clientID))
+		return nil // This is not an error - just skip processing
+	}
+
+	// Prepare event data for dispatching (matching Python logic)
+	dispatchData := map[string]interface{}{
+		"event_id":    payload.EventID,
+		"event_type":  payload.EventType,
+		"entity_type": payload.EntityType,
+		"entity_id":   payload.EntityID,
+		"parent_id":   payload.ParentID,
+		"data":        payload.Data,
+		"timestamp":   event.CreatedAt.Format(time.RFC3339),
+		"client_id":   clientID,
+	}
+
+	// For each processor, create a delivery record and dispatch in a separate task
+	deliveryResults := make([]map[string]interface{}, 0, len(processors))
+	
+	for _, processor := range processors {
+		// Convert event ID to ObjectID
+		eventObjID, err := primitive.ObjectIDFromHex(payload.EventID)
+		if err != nil {
+			tw.logger.Error("Invalid event ID format", 
+				zap.String("event_id", payload.EventID), 
+				zap.Error(err))
+			continue
+		}
+
+		// Create delivery record
+		delivery, err := tw.eventPublisherService.EventDeliveryTrackingService.CreateDeliveryRecord(
+			ctx, eventObjID, processor.ID, dispatchData, 3, // Max 3 retries
+		)
+		if err != nil {
+			tw.logger.Error("Failed to create delivery record", 
+				zap.String("processor_id", processor.ID.Hex()), 
+				zap.Error(err))
+			continue
+		}
+
+		// Dispatch to processor in a separate task with retry capability
+		err = tw.taskClient.EnqueueDeliverToProcessor(
+			ctx,
+			processor.ID.Hex(),
+			dispatchData,
+			delivery.ID.Hex(),
+		)
+		if err != nil {
+			tw.logger.Error("Failed to enqueue delivery task", 
+				zap.String("processor_id", processor.ID.Hex()), 
+				zap.Error(err))
+			continue
+		}
+
+		deliveryResults = append(deliveryResults, map[string]interface{}{
+			"processor_id":   processor.ID.Hex(),
+			"processor_name": processor.Name,
+			"delivery_id":    delivery.ID.Hex(),
+			"status":         "dispatched",
+		})
+	}
+
+	tw.logger.Info("Dispatched event to processors", 
+		zap.String("event_id", payload.EventID),
+		zap.String("client_id", clientID),
+		zap.Int("processor_count", len(processors)))
+
+	return nil
+}
+
+// HandleDeliverToProcessor handles deliver_to_processor tasks (matching Python logic)
+// This mirrors the deliver_to_processor task from Python backend
+func (tw *TaskWorker) HandleDeliverToProcessor(ctx context.Context, kwargs map[string]interface{}) error {
+	// Parse payload
+	payloadBytes, err := json.Marshal(kwargs)
+	if err != nil {
+		return fmt.Errorf("failed to marshal kwargs: %w", err)
+	}
+
+	var payload DeliverToProcessorPayload
+	if err := json.Unmarshal(payloadBytes, &payload); err != nil {
+		return fmt.Errorf("failed to unmarshal deliver to processor payload: %w", err)
+	}
+
+	tw.logger.Info("Processing deliver_to_processor task",
+		zap.String("processor_id", payload.ProcessorID),
+		zap.String("delivery_id", payload.DeliveryID))
+
+	// Get the processor
+	processor, err := tw.eventPublisherService.EventProcessorConfigService.GetProcessorByID(ctx, payload.ProcessorID)
+	if err != nil {
+		tw.logger.Error("Processor not found", 
+			zap.String("processor_id", payload.ProcessorID), 
+			zap.Error(err))
+
+		// Record failure
+		_, recordErr := tw.eventPublisherService.EventDeliveryTrackingService.RecordAttempt(
+			ctx,
+			payload.DeliveryID,
+			models.AttemptStatusFailure,
+			0,
+			"",
+			map[string]interface{}{"error": fmt.Sprintf("Processor %s not found", payload.ProcessorID)},
+		)
+		if recordErr != nil {
+			tw.logger.Error("Failed to record attempt", zap.Error(recordErr))
+		}
+
+		return fmt.Errorf("processor not found: %w", err)
+	}
+
+	// Try to dispatch
+	result := tw.processorDispatchService.DispatchToProcessor(ctx, processor, payload.EventData)
+
+	// Record the attempt
+	attempt, err := tw.eventPublisherService.EventDeliveryTrackingService.RecordAttempt(
+		ctx,
+		payload.DeliveryID,
+		func() models.AttemptStatus {
+			if result.Success {
+				return models.AttemptStatusSuccess
+			}
+			return models.AttemptStatusFailure
+		}(),
+		result.ResponseStatus,
+		result.ResponseBody,
+		map[string]interface{}{"error": result.ErrorMessage},
+	)
+	if err != nil {
+		tw.logger.Error("Failed to record delivery attempt", zap.Error(err))
+		// Continue processing even if we can't record the attempt
+	}
+
+	if result.Success {
+		tw.logger.Info("Successfully delivered to processor",
+			zap.String("processor_id", payload.ProcessorID),
+			zap.String("delivery_id", payload.DeliveryID),
+			zap.Int("attempt", int(attempt.AttemptNumber)))
+		return nil
+	}
+
+	// If delivery failed, return error to trigger retry mechanism
+	tw.logger.Error("Failed to deliver to processor",
+		zap.String("processor_id", payload.ProcessorID),
+		zap.String("delivery_id", payload.DeliveryID),
+		zap.String("error", result.ErrorMessage),
+		zap.Int("response_status", result.ResponseStatus))
+
+	return fmt.Errorf("delivery failed: %s", result.ErrorMessage)
+}
+
 // getClientIDForEntity determines client_id for different entity types
 // This mirrors the _get_client_id_for_entity function from Python backend
-func (tw *TaskWorker) getClientIDForEntity(entityType, entityID string) (string, error) {
+func (tw *TaskWorker) getClientIDForEntity(ctx context.Context, entityType, entityID string) (string, error) {
 	switch entityType {
-	case "chat_message":
-		_, err := tw.databaseService.GetChatMessage(context.Background(), entityID)
+	case string(models.EntityTypeChatMessage):
+		// Get message and then get session to find client
+		message, err := tw.databaseService.GetChatMessage(ctx, entityID)
 		if err != nil {
-			return "", err
+			tw.logger.Error("Failed to get chat message for client resolution", 
+				zap.String("entity_id", entityID), zap.Error(err))
+			return "", fmt.Errorf("failed to get chat message: %w", err)
 		}
-		// For now, return a default client ID since ChatMessage doesn't have ClientID field
-		// TODO: Implement proper client resolution logic
-		return "default_client", nil
-
-	case "chat_session":
-		session, err := tw.databaseService.GetChatSession(context.Background(), entityID)
+		
+		// Get session to find client
+		session, err := tw.databaseService.GetChatSessionByID(ctx, message.SessionID.Hex())
 		if err != nil {
-			return "", err
+			tw.logger.Error("Failed to get chat session for client resolution", 
+				zap.String("session_id", message.SessionID.Hex()), zap.Error(err))
+			return "", fmt.Errorf("failed to get chat session: %w", err)
 		}
-		return session.ClientID, nil
+		
+		if session.Client == nil {
+			return "", fmt.Errorf("chat session has no client associated")
+		}
+		
+		return session.Client.Hex(), nil
 
-	case "chat_suggestion":
-		// For now, return a default client ID
-		return "default_client", nil
+	case string(models.EntityTypeChatSession):
+		session, err := tw.databaseService.GetChatSessionByID(ctx, entityID)
+		if err != nil {
+			tw.logger.Error("Failed to get chat session for client resolution", 
+				zap.String("entity_id", entityID), zap.Error(err))
+			return "", fmt.Errorf("failed to get chat session: %w", err)
+		}
+		
+		if session.Client == nil {
+			return "", fmt.Errorf("chat session has no client associated")
+		}
+		
+		return session.Client.Hex(), nil
 
-	case "ai_service":
-		// For AI service events, return a default client ID
-		return "default_client", nil
+	case string(models.EntityTypeChatSuggestion):
+		// Get suggestion and then get session to find client
+		// For now, we'll need to implement a GetChatSuggestion method in DatabaseService
+		// This is a placeholder that returns an error for now
+		return "", fmt.Errorf("chat suggestion client resolution not yet implemented")
+
+	case string(models.EntityTypeAIService):
+		// For AI service events, we need to find the related chat message via parent_id
+		// This assumes parent_id points to a chat message
+		events, err := tw.eventPublisherService.EventService.GetEntityEvents(ctx, models.EntityTypeAIService, entityID)
+		if err != nil {
+			return "", fmt.Errorf("failed to get AI service events: %w", err)
+		}
+		
+		if len(events) > 0 && events[0].ParentID != "" {
+			return tw.getClientIDForEntity(ctx, string(models.EntityTypeChatMessage), events[0].ParentID)
+		}
+		
+		return "", fmt.Errorf("could not determine client_id for AI service entity")
 
 	default:
 		return "", fmt.Errorf("unsupported entity type: %s", entityType)

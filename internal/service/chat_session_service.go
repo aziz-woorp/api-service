@@ -11,14 +11,19 @@ import (
 	"github.com/fraiday-org/api-service/internal/repository"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
 )
 
 type ChatSessionService struct {
-	Repo *repository.ChatSessionRepository
+	Repo           *repository.ChatSessionRepository
+	ThreadManager  *ThreadManagerService
 }
 
 func NewChatSessionService(repo *repository.ChatSessionRepository) *ChatSessionService {
-	return &ChatSessionService{Repo: repo}
+	return &ChatSessionService{
+		Repo:          repo,
+		ThreadManager: NewThreadManagerService(repo.Collection.Database()),
+	}
 }
 
 func (s *ChatSessionService) CreateSession(ctx context.Context) (string, error) {
@@ -32,22 +37,76 @@ func (s *ChatSessionService) CreateSession(ctx context.Context) (string, error) 
 	return session.SessionID, nil
 }
 
-func (s *ChatSessionService) GetOrCreateSessionBySessionID(ctx context.Context, sessionID string) (*models.ChatSession, error) {
-	// Try to find existing session by session_id
-	session, err := s.Repo.GetBySessionID(ctx, sessionID)
-	if err == nil {
-		return session, nil
+// GetOrCreateSessionBySessionID retrieves or creates a session with proper client/channel association and threading support
+func (s *ChatSessionService) GetOrCreateSessionBySessionID(ctx context.Context, sessionID string, client *models.Client, clientChannel *models.ClientChannel) (*models.ChatSession, string, error) {
+	// Check if threading is enabled for this client
+	threadingEnabled := s.ThreadManager.IsThreadingEnabledForClient(ctx, client)
+	
+	if threadingEnabled {
+		// Parse session ID to check if it's a thread session ID
+		baseSessionID, threadID := s.ThreadManager.ParseSessionID(sessionID)
+		
+		// Try to find existing base session by session_id
+		baseSession, err := s.Repo.GetBySessionID(ctx, baseSessionID)
+		if err != nil && err != mongo.ErrNoDocuments {
+			return nil, "", err
+		}
+		
+		// If base session doesn't exist, create it
+		if baseSession == nil {
+			baseSession = &models.ChatSession{
+				SessionID:     baseSessionID,
+				Active:        true,
+				Client:        &client.ID,
+				ClientChannel: &clientChannel.ID,
+			}
+			if err := s.Repo.Create(ctx, baseSession); err != nil {
+				return nil, "", err
+			}
+		}
+		
+		// Handle thread management
+		if threadID != "" {
+			// Specific thread requested - try to get it
+			thread, err := s.ThreadManager.GetOrCreateActiveThread(ctx, sessionID, false, 0)
+			if err != nil {
+				return nil, "", err
+			}
+			if thread != nil {
+				return baseSession, thread.ThreadSessionID, nil
+			}
+		} else {
+			// Get or create active thread for base session
+			thread, err := s.ThreadManager.GetOrCreateActiveThread(ctx, baseSessionID, false, 0)
+			if err != nil {
+				return nil, "", err
+			}
+			if thread != nil {
+				return baseSession, thread.ThreadSessionID, nil
+			}
+		}
+		
+		// Return base session if no threading
+		return baseSession, baseSession.SessionID, nil
 	}
 	
-	// If not found, create new session with this session_id
+	// Non-threaded mode: standard session handling
+	session, err := s.Repo.GetBySessionID(ctx, sessionID)
+	if err == nil {
+		return session, session.SessionID, nil
+	}
+	
+	// If not found, create new session with client/channel association
 	session = &models.ChatSession{
-		SessionID: sessionID,
-		Active:    true,
+		SessionID:     sessionID,
+		Active:        true,
+		Client:        &client.ID,
+		ClientChannel: &clientChannel.ID,
 	}
 	if err := s.Repo.Create(ctx, session); err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	return session, nil
+	return session, session.SessionID, nil
 }
 
 func (s *ChatSessionService) GetSession(ctx context.Context, id string) (*dto.ChatSessionResponse, error) {

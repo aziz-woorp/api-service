@@ -75,6 +75,11 @@ func (s *ClientService) ListClients(ctx context.Context) ([]dto.ClientResponse, 
 	return resp, nil
 }
 
+// GetClient retrieves a client by client_id
+func (s *ClientService) GetClient(ctx context.Context, clientID string) (*models.Client, error) {
+	return s.Repo.GetByClientID(ctx, clientID)
+}
+
 func (s *ClientService) UpdateClient(ctx context.Context, clientID string, req *dto.ClientCreateOrUpdateRequest) (*dto.ClientResponse, error) {
 	update := bson.M{}
 	if req.Name != "" {

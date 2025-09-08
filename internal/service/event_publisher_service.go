@@ -24,6 +24,7 @@ type EventPublisherService struct {
 // TaskClient defines the interface for publishing tasks to RabbitMQ
 type TaskClient interface {
 	PublishEventProcessorTask(ctx context.Context, eventID string, eventType models.EventType, entityType models.EntityType, entityID string, parentID *string, data map[string]interface{}) error
+	EnqueueProcessEvent(ctx context.Context, eventID string, eventType string, entityType string, entityID string, parentID *string, data map[string]interface{}) error
 }
 
 // NewEventPublisherService creates a new EventPublisherService.
@@ -105,7 +106,32 @@ func (s *EventPublisherService) PublishEvent(
 }
 
 // ProcessEventAsync handles the asynchronous processing of events.
+// This now uses the new process_event task architecture matching Python backend
 func (s *EventPublisherService) ProcessEventAsync(ctx context.Context, event *models.Event) error {
+	if s.TaskClient == nil {
+		log.Printf("TaskClient is nil - falling back to direct processing for event %s", event.ID.Hex())
+		return s.processEventDirect(ctx, event)
+	}
+
+	// Use the new process_event task (matching Python backend logic)
+	return s.TaskClient.EnqueueProcessEvent(
+		ctx,
+		event.ID.Hex(),
+		string(event.EventType),
+		string(event.EntityType),
+		event.EntityID,
+		func() *string {
+			if event.ParentID != "" {
+				return &event.ParentID
+			}
+			return nil
+		}(),
+		event.Data,
+	)
+}
+
+// processEventDirect handles direct processing when TaskClient is not available (fallback)
+func (s *EventPublisherService) processEventDirect(ctx context.Context, event *models.Event) error {
 	// Get client ID from the entity
 	clientID, err := s.getClientIDForEntity(ctx, event.EntityType, event.EntityID)
 	if err != nil {

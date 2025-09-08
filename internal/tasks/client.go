@@ -105,6 +105,23 @@ type EventProcessorPayload struct {
 	Data       map[string]interface{} `json:"data"`
 }
 
+// ProcessEventPayload represents the payload for process_event tasks (matching Python logic)
+type ProcessEventPayload struct {
+	EventID    string                 `json:"event_id"`
+	EventType  string                 `json:"event_type"`
+	EntityType string                 `json:"entity_type"`
+	EntityID   string                 `json:"entity_id"`
+	ParentID   string                 `json:"parent_id"`
+	Data       map[string]interface{} `json:"data"`
+}
+
+// DeliverToProcessorPayload represents the payload for deliver_to_processor tasks (matching Python logic)
+type DeliverToProcessorPayload struct {
+	ProcessorID string                 `json:"processor_id"`
+	EventData   map[string]interface{} `json:"event_data"`
+	DeliveryID  string                 `json:"delivery_id"`
+}
+
 // publishTask publishes a task to the specified queue
 func (tc *TaskClient) publishTask(ctx context.Context, queueName, taskType string, payload interface{}) error {
 	// Create message with Celery-compatible format
@@ -196,4 +213,32 @@ func (tc *TaskClient) EnqueueEventProcessor(ctx context.Context, eventID, eventT
 // PublishEventProcessorTask publishes an event processor task (implements service.TaskClient interface)
 func (tc *TaskClient) PublishEventProcessorTask(ctx context.Context, eventID string, eventType models.EventType, entityType models.EntityType, entityID string, parentID *string, data map[string]interface{}) error {
 	return tc.EnqueueEventProcessor(ctx, eventID, string(eventType), string(entityType), entityID, parentID, data)
+}
+
+// EnqueueProcessEvent publishes a process_event task (matching Python logic)
+func (tc *TaskClient) EnqueueProcessEvent(ctx context.Context, eventID string, eventType string, entityType string, entityID string, parentID *string, data map[string]interface{}) error {
+	payload := ProcessEventPayload{
+		EventID:    eventID,
+		EventType:  eventType,
+		EntityType: entityType,
+		EntityID:   entityID,
+		Data:       data,
+	}
+	
+	if parentID != nil {
+		payload.ParentID = *parentID
+	}
+
+	return tc.publishTask(ctx, "events", TypeProcessEvent, payload)
+}
+
+// EnqueueDeliverToProcessor publishes a deliver_to_processor task (matching Python logic)
+func (tc *TaskClient) EnqueueDeliverToProcessor(ctx context.Context, processorID string, eventData map[string]interface{}, deliveryID string) error {
+	payload := DeliverToProcessorPayload{
+		ProcessorID: processorID,
+		EventData:   eventData,
+		DeliveryID:  deliveryID,
+	}
+
+	return tc.publishTask(ctx, "events", TypeDeliverToProcessor, payload)
 }

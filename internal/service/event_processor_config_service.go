@@ -146,6 +146,11 @@ func (s *EventProcessorConfigService) GetConfigByID(ctx context.Context, configI
 	return config, nil
 }
 
+// GetProcessorByID retrieves an event processor configuration by its ID (alias for GetConfigByID).
+func (s *EventProcessorConfigService) GetProcessorByID(ctx context.Context, processorID string) (*models.EventProcessorConfig, error) {
+	return s.GetConfigByID(ctx, processorID)
+}
+
 // ListConfigs retrieves event processor configurations with pagination.
 func (s *EventProcessorConfigService) ListConfigs(
 	ctx context.Context,

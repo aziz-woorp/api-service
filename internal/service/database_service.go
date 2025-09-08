@@ -98,6 +98,28 @@ func (db *DatabaseService) GetChatSession(ctx context.Context, sessionID string)
 	return &session, nil
 }
 
+// GetChatSessionByID retrieves a chat session by its MongoDB _id
+func (db *DatabaseService) GetChatSessionByID(ctx context.Context, sessionID string) (*models.ChatSession, error) {
+	collection := db.database.Collection("chat_sessions")
+	
+	// Convert sessionID string to ObjectID
+	objectID, err := primitive.ObjectIDFromHex(sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid session ID format: %s", sessionID)
+	}
+	
+	var session models.ChatSession
+	err = collection.FindOne(ctx, bson.M{"_id": objectID}).Decode(&session)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return nil, fmt.Errorf("session not found: %s", sessionID)
+		}
+		return nil, fmt.Errorf("failed to get session: %w", err)
+	}
+	
+	return &session, nil
+}
+
 // SaveChatMessage saves or updates a chat message
 func (db *DatabaseService) SaveChatMessage(ctx context.Context, message *ChatMessage) error {
 	collection := db.database.Collection("chat_messages")

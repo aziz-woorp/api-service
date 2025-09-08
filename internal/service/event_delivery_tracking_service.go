@@ -52,6 +52,62 @@ func (s *EventDeliveryTrackingService) CreateDeliveryRecord(
 	return delivery, nil
 }
 
+// RecordAttempt records a delivery attempt (simplified interface matching Python backend)
+func (s *EventDeliveryTrackingService) RecordAttempt(
+	ctx context.Context,
+	deliveryID string,
+	status models.AttemptStatus,
+	responseStatus int,
+	responseBody string,
+	logs map[string]interface{},
+) (*models.EventDeliveryAttempt, error) {
+	// Convert delivery ID to ObjectID
+	deliveryObjID, err := primitive.ObjectIDFromHex(deliveryID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid delivery ID: %w", err)
+	}
+
+	// Get current delivery to determine attempt number
+	delivery, err := s.DeliveryRepo.GetByID(ctx, deliveryObjID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get delivery: %w", err)
+	}
+
+	attemptNumber := delivery.CurrentAttempts + 1
+	
+	// Convert AttemptStatus to DeliveryStatus
+	var deliveryStatus models.DeliveryStatus
+	switch status {
+	case models.AttemptStatusSuccess:
+		deliveryStatus = models.DeliveryStatusCompleted
+	case models.AttemptStatusFailure:
+		if attemptNumber >= delivery.MaxAttempts {
+			deliveryStatus = models.DeliveryStatusFailed
+		} else {
+			deliveryStatus = models.DeliveryStatusPending
+		}
+	}
+
+	// Use the existing RecordDeliveryAttempt method
+	return s.RecordDeliveryAttempt(
+		ctx,
+		deliveryObjID,
+		attemptNumber,
+		deliveryStatus,
+		&responseStatus,
+		func() string {
+			if errorMsg, exists := logs["error"]; exists {
+				if str, ok := errorMsg.(string); ok {
+					return str
+				}
+			}
+			return ""
+		}(),
+		map[string]interface{}{}, // request payload (empty for now)
+		map[string]interface{}{"body": responseBody, "status": responseStatus},
+	)
+}
+
 // RecordDeliveryAttempt records a delivery attempt with its result.
 func (s *EventDeliveryTrackingService) RecordDeliveryAttempt(
 	ctx context.Context,

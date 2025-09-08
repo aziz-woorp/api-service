@@ -16,15 +16,19 @@ import (
 
 // ChatMessageHandler provides HTTP handlers for chat messages.
 type ChatMessageHandler struct {
-	Service        *service.ChatMessageService
-	SessionService *service.ChatSessionService
+	Service              *service.ChatMessageService
+	SessionService       *service.ChatSessionService
+	ClientService        *service.ClientService
+	ClientChannelService *service.ClientChannelService
 }
 
 // NewChatMessageHandler creates a new ChatMessageHandler.
-func NewChatMessageHandler(svc *service.ChatMessageService, sessionSvc *service.ChatSessionService) *ChatMessageHandler {
+func NewChatMessageHandler(svc *service.ChatMessageService, sessionSvc *service.ChatSessionService, clientSvc *service.ClientService, clientChannelSvc *service.ClientChannelService) *ChatMessageHandler {
 	return &ChatMessageHandler{
-		Service:        svc,
-		SessionService: sessionSvc,
+		Service:              svc,
+		SessionService:       sessionSvc,
+		ClientService:        clientSvc,
+		ClientChannelService: clientChannelSvc,
 	}
 }
 
@@ -42,8 +46,30 @@ func (h *ChatMessageHandler) CreateMessage(c *gin.Context) {
 		return
 	}
 
-	// Get or create session by session_id (matching Python logic)
-	session, err := h.SessionService.GetOrCreateSessionBySessionID(c.Request.Context(), req.SessionID)
+	// Step 1: Client validation (matching Python logic)
+	client, err := h.ClientService.GetClient(c.Request.Context(), req.ClientID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "client not found"})
+		return
+	}
+	if !client.IsActive {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "client is not active"})
+		return
+	}
+
+	// Step 2: Client channel resolution (matching Python logic)
+	clientChannel, err := h.ClientChannelService.GetChannelByType(c.Request.Context(), req.ClientID, req.ClientChannelType)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "client channel not found"})
+		return
+	}
+	if !clientChannel.IsActive {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "client channel is not active"})
+		return
+	}
+
+	// Step 3: Get or create session with client/channel association and threading support (matching Python logic)
+	session, effectiveSessionID, err := h.SessionService.GetOrCreateSessionBySessionID(c.Request.Context(), req.SessionID, client, clientChannel)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get or create session"})
 		return
@@ -68,18 +94,17 @@ func (h *ChatMessageHandler) CreateMessage(c *gin.Context) {
 	}
 
 	// Background workflow triggers (AI chat/suggestion) - AFTER message is saved
+	// Use effective session ID (which includes thread info if threading is enabled)
 	aiEnabled, aiOk := msg.Config["ai_enabled"].(bool)
 	suggestionMode, suggestionOk := msg.Config["suggestion_mode"].(bool)
 	if aiOk && aiEnabled && (!suggestionOk || !suggestionMode) {
 		// AI chat workflow - message should now have ID assigned by database
 		messageID := msg.ID.Hex() // msg.ID is now populated after successful creation
-		sessionID := msg.SessionID.Hex()
-		service.TriggerChatWorkflow(c.Request.Context(), messageID, sessionID)
+		service.TriggerChatWorkflow(c.Request.Context(), messageID, effectiveSessionID)
 	} else if suggestionOk && suggestionMode && (!aiOk || !aiEnabled) {
 		// Suggestion workflow - message should now have ID assigned by database
 		messageID := msg.ID.Hex() // msg.ID is now populated after successful creation
-		sessionID := msg.SessionID.Hex()
-		service.TriggerSuggestionWorkflow(c.Request.Context(), messageID, sessionID)
+		service.TriggerSuggestionWorkflow(c.Request.Context(), messageID, effectiveSessionID)
 	}
 
 	c.JSON(http.StatusCreated, msg)
