@@ -130,8 +130,18 @@ func runWorker(cfg *config.Config, logger *zap.Logger, mongoClient *mongo.Client
 	
 	eventPublisherService := service.NewEventPublisherService(eventService, eventProcessorConfigService, eventDeliveryTrackingService, chatSessionRepo, chatMessageRepo, taskClient)
 	
+	// Initialize services needed for PayloadService
+	chatSessionService := service.NewChatSessionService(chatSessionRepo)
+	chatMessageService := service.NewChatMessageService(chatMessageRepo, eventPublisherService, nil) // PayloadService will be set later
+	
+	// Initialize PayloadService
+	payloadService := service.NewPayloadService(chatMessageService, chatSessionService)
+	
+	// Update ChatMessageService with PayloadService
+	chatMessageService.PayloadService = payloadService
+	
 	// Initialize task worker
-	taskWorker, err := tasks.NewTaskWorker(rabbitMQURL, logger, cfg.AIServiceURL, cfg.SlackAIToken, databaseService, eventPublisherService)
+	taskWorker, err := tasks.NewTaskWorker(rabbitMQURL, logger, cfg.AIServiceURL, cfg.SlackAIToken, databaseService, eventPublisherService, payloadService)
 	if err != nil {
 		logger.Fatal("Failed to create task worker", zap.Error(err))
 	}

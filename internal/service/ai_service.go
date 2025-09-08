@@ -65,13 +65,28 @@ type AIRequest struct {
 	Attachments       []map[string]interface{} `json:"attachments,omitempty"`
 }
 
+// AICarouselItem represents an item in a carousel
+type AICarouselItem struct {
+	Title              string                   `json:"title"`
+	Description        string                   `json:"description"`
+	MediaURL           string                   `json:"media_url,omitempty"`
+	MediaType          string                   `json:"media_type,omitempty"`
+	DefaultActionURL   string                   `json:"default_action_url,omitempty"`
+	Buttons            []map[string]interface{} `json:"buttons,omitempty"`
+}
+
+// AICarousel represents carousel data structure
+type AICarousel struct {
+	Items []AICarouselItem `json:"items,omitempty"`
+}
+
 // AIAttachment represents an attachment in AI response
 type AIAttachment struct {
 	Type     string                 `json:"type"`
 	FileName string                 `json:"file_name,omitempty"`
 	FileURL  string                 `json:"file_url,omitempty"`
 	FileType string                 `json:"file_type,omitempty"`
-	Carousel []map[string]interface{} `json:"carousel,omitempty"`
+	Carousel AICarousel             `json:"carousel,omitempty"`
 	Buttons  []map[string]interface{} `json:"buttons,omitempty"`
 }
 
@@ -94,6 +109,15 @@ type AIMetadata struct {
 	CloseSession bool `json:"close_session,omitempty"`
 }
 
+// AIResponseResult represents the result field in Slack/Sunshine AI response
+type AIResponseResult struct {
+	Text            string                   `json:"text"`
+	ConfidenceScore float64                  `json:"confidence_score"`
+	Data            map[string]interface{}   `json:"data,omitempty"`
+	Metadata        map[string]interface{}   `json:"metadata,omitempty"`
+	Attachments     []AIAttachment           `json:"attachments,omitempty"`
+}
+
 // AIResponse represents the response structure from AI processing
 type AIResponse struct {
 	Status      string                 `json:"status"`
@@ -101,6 +125,8 @@ type AIResponse struct {
 	Data        AIData                 `json:"data"`
 	Metadata    AIMetadata             `json:"metadata,omitempty"`
 	Error       string                 `json:"error,omitempty"`
+	// Slack/Sunshine specific fields
+	Result      *AIResponseResult      `json:"result,omitempty"`
 	// Legacy fields for backward compatibility
 	MessageID   string                 `json:"message_id,omitempty"`
 	SessionID   string                 `json:"session_id,omitempty"`
@@ -377,14 +403,41 @@ func (ai *AIService) parseAttachment(attachment map[string]interface{}) AIAttach
 
 	// Add carousel data if present
 	if attachmentType == "carousel" {
-		if carousel, exists := attachment["carousel"].([]interface{}); exists {
-			carouselData := make([]map[string]interface{}, len(carousel))
-			for i, item := range carousel {
-				if itemMap, ok := item.(map[string]interface{}); ok {
-					carouselData[i] = itemMap
+		if carouselMap, exists := attachment["carousel"].(map[string]interface{}); exists {
+			if items, itemsExist := carouselMap["items"].([]interface{}); itemsExist {
+				carouselItems := make([]AICarouselItem, len(items))
+				for i, item := range items {
+					if itemMap, ok := item.(map[string]interface{}); ok {
+						carouselItem := AICarouselItem{}
+						if title, titleOk := itemMap["title"].(string); titleOk {
+							carouselItem.Title = title
+						}
+						if desc, descOk := itemMap["description"].(string); descOk {
+							carouselItem.Description = desc
+						}
+						if mediaURL, mediaOk := itemMap["media_url"].(string); mediaOk {
+							carouselItem.MediaURL = mediaURL
+						}
+						if mediaType, mediaTypeOk := itemMap["media_type"].(string); mediaTypeOk {
+							carouselItem.MediaType = mediaType
+						}
+						if defaultURL, defaultOk := itemMap["default_action_url"].(string); defaultOk {
+							carouselItem.DefaultActionURL = defaultURL
+						}
+						if buttons, buttonsOk := itemMap["buttons"].([]interface{}); buttonsOk {
+							buttonsData := make([]map[string]interface{}, len(buttons))
+							for j, button := range buttons {
+								if buttonMap, buttonOk := button.(map[string]interface{}); buttonOk {
+									buttonsData[j] = buttonMap
+								}
+							}
+							carouselItem.Buttons = buttonsData
+						}
+						carouselItems[i] = carouselItem
+					}
 				}
+				result.Carousel = AICarousel{Items: carouselItems}
 			}
-			result.Carousel = carouselData
 		}
 	}
 

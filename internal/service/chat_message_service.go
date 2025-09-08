@@ -4,6 +4,7 @@ package service
 import (
 	"context"
 	"errors"
+	"log"
 
 	"github.com/fraiday-org/api-service/internal/models"
 	"github.com/fraiday-org/api-service/internal/repository"
@@ -13,18 +14,61 @@ import (
 
 // ChatMessageService encapsulates business logic for chat messages.
 type ChatMessageService struct {
-	Repo *repository.ChatMessageRepository
+	Repo                 *repository.ChatMessageRepository
+	EventPublisherService *EventPublisherService
+	PayloadService       *PayloadService
 }
 
 // NewChatMessageService creates a new ChatMessageService.
-func NewChatMessageService(repo *repository.ChatMessageRepository) *ChatMessageService {
-	return &ChatMessageService{Repo: repo}
+func NewChatMessageService(repo *repository.ChatMessageRepository, eventPublisher *EventPublisherService, payloadService *PayloadService) *ChatMessageService {
+	return &ChatMessageService{
+		Repo:                 repo,
+		EventPublisherService: eventPublisher,
+		PayloadService:       payloadService,
+	}
 }
 
 // CreateChatMessage creates a new chat message.
 func (s *ChatMessageService) CreateChatMessage(ctx context.Context, msg *models.ChatMessage) error {
-	// TODO: Add session/thread management, sender type validation, event publishing as needed.
-	return s.Repo.Create(ctx, msg)
+	// Create the message in database
+	if err := s.Repo.Create(ctx, msg); err != nil {
+		return err
+	}
+
+	// Publish CHAT_MESSAGE_CREATED event (matching Python implementation)
+	if s.EventPublisherService != nil && s.PayloadService != nil {
+		// Create payload data for the event
+		payload, err := s.PayloadService.CreateChatMessagePayload(ctx, msg.ID.Hex())
+		if err != nil {
+			// Log error but don't fail the message creation
+			log.Printf("Failed to create message payload for event: %v", err)
+			payload = map[string]interface{}{
+				"id":         msg.ID.Hex(),
+				"sender":     msg.Sender,
+				"sender_type": msg.SenderType,
+				"text":       msg.Text,
+				"category":   string(msg.Category),
+			}
+		}
+
+		// Get session ID for parent_id
+		sessionIDStr := msg.SessionID.Hex()
+
+		// Publish the event
+		_, err = s.EventPublisherService.PublishChatMessageEvent(
+			ctx,
+			models.EventTypeChatMessageCreated,
+			msg.ID.Hex(),
+			&sessionIDStr,
+			payload,
+		)
+		if err != nil {
+			// Log error but don't fail the message creation
+			log.Printf("Failed to publish CHAT_MESSAGE_CREATED event: %v", err)
+		}
+	}
+
+	return nil
 }
 
 // ListMessages retrieves chat messages by session, user, or other filters.
@@ -42,6 +86,11 @@ func (s *ChatMessageService) ListMessages(ctx context.Context, sessionID *primit
 // UpdateChatMessage updates an existing chat message by ID.
 func (s *ChatMessageService) UpdateChatMessage(ctx context.Context, id primitive.ObjectID, update bson.M) error {
 	return s.Repo.Update(ctx, id, update)
+}
+
+// GetChatMessage retrieves a chat message by ID.
+func (s *ChatMessageService) GetChatMessage(ctx context.Context, id primitive.ObjectID) (*models.ChatMessage, error) {
+	return s.Repo.GetByID(ctx, id)
 }
 
 // BulkCreateChatMessages creates multiple chat messages at once.

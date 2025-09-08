@@ -197,3 +197,8 @@ func (s *ChatSessionService) ListSessions(ctx context.Context, params ListSessio
 	}
 	return resp, nil
 }
+
+// GetSessionByID retrieves a session by its MongoDB ObjectID
+func (s *ChatSessionService) GetSessionByID(ctx context.Context, id primitive.ObjectID) (*models.ChatSession, error) {
+	return s.Repo.GetByID(ctx, id)
+}

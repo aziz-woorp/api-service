@@ -34,6 +34,7 @@ type TaskWorker struct {
 	databaseService           *service.DatabaseService
 	eventPublisherService     *service.EventPublisherService
 	processorDispatchService  *service.ProcessorDispatchService
+	payloadService            *service.PayloadService
 	taskClient                *TaskClient
 	queues                    []string
 	concurrency               int
@@ -43,7 +44,7 @@ type TaskWorker struct {
 }
 
 // NewTaskWorker creates a new task worker
-func NewTaskWorker(rabbitMQURL string, logger *zap.Logger, aiURL, aiToken string, databaseService *service.DatabaseService, eventPublisherService *service.EventPublisherService) (*TaskWorker, error) {
+func NewTaskWorker(rabbitMQURL string, logger *zap.Logger, aiURL, aiToken string, databaseService *service.DatabaseService, eventPublisherService *service.EventPublisherService, payloadService *service.PayloadService) (*TaskWorker, error) {
 	conn, err := amqp.Dial(rabbitMQURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to RabbitMQ: %w", err)
@@ -90,6 +91,7 @@ func NewTaskWorker(rabbitMQURL string, logger *zap.Logger, aiURL, aiToken string
 		databaseService:          databaseService,
 		eventPublisherService:    eventPublisherService,
 		processorDispatchService: processorDispatchService,
+		payloadService:           payloadService,
 		taskClient:               taskClient,
 		queues:                   []string{"chat_workflow", "events", "default"},
 		concurrency:              10,
@@ -426,14 +428,14 @@ func (tw *TaskWorker) HandleChatWorkflow(ctx context.Context, kwargs map[string]
 	if err != nil {
 		tw.logger.Error("Failed to get message from database", zap.Error(err))
 		
-		// Publish error event
+		// Publish error event with detailed error information (matching Python)
 		_, publishErr := tw.eventPublisherService.PublishChatMessageEvent(
 			ctx,
 			models.EventTypeChatWorkflowError,
 			payload.MessageID,
 			&payload.SessionID,
 			map[string]interface{}{
-				"error":      err.Error(),
+				"error":      fmt.Sprintf("%+v", err), // Include stack trace
 				"session_id": payload.SessionID,
 				"stage":      "message_retrieval",
 			},
@@ -462,14 +464,14 @@ func (tw *TaskWorker) HandleChatWorkflow(ctx context.Context, kwargs map[string]
 	if err != nil {
 		tw.logger.Error("Failed to process AI request", zap.Error(err))
 		
-		// Publish error event
+		// Publish error event with detailed error information (matching Python)
 		_, publishErr := tw.eventPublisherService.PublishChatMessageEvent(
 			ctx,
 			models.EventTypeChatWorkflowError,
 			payload.MessageID,
 			&payload.SessionID,
 			map[string]interface{}{
-				"error":      err.Error(),
+				"error":      fmt.Sprintf("%+v", err), // Include stack trace
 				"session_id": payload.SessionID,
 				"stage":      "ai_processing",
 			},
@@ -485,19 +487,50 @@ func (tw *TaskWorker) HandleChatWorkflow(ctx context.Context, kwargs map[string]
 		zap.String("message_id", aiResponse.MessageID),
 		zap.String("response_length", fmt.Sprintf("%d", len(aiResponse.Response))))
 	
-	// Save AI response to database
+	// Save AI response to database (matching Python implementation)
+	// Handle different response formats (Slack/Sunshine vs regular AI service)
+	var responseText string
+	var confidenceScore float64
+	var attachments []models.Attachment
+	var closeSession bool
+	var answerData interface{}
+
+	if aiResponse.Result != nil {
+		// Slack/Sunshine format - data is in Result field
+		responseText = aiResponse.Result.Text
+		confidenceScore = aiResponse.Result.ConfidenceScore
+		attachments = convertAIAttachments(aiResponse.Result.Attachments)
+		if aiResponse.Result.Metadata != nil {
+			if closeSessionVal, ok := aiResponse.Result.Metadata["close_session"].(bool); ok {
+				closeSession = closeSessionVal
+			}
+		}
+		answerData = aiResponse.Result.Data
+	} else {
+		// Regular AI service format - data is in Data field
+		responseText = aiResponse.Data.Answer.AnswerText
+		confidenceScore = aiResponse.Data.ConfidenceScore
+		attachments = convertAIAttachments(aiResponse.Data.Answer.Attachments)
+		closeSession = aiResponse.Metadata.CloseSession
+		answerData = aiResponse.Data.Answer.AnswerData
+	}
+
 	responseMessage := &service.ChatMessage{
-		Text:       aiResponse.Response,
-		SenderType: "assistant",
-		SessionID:  message.SessionID,
-		Category:   models.MessageCategoryMessage,
-		Confidence: aiResponse.Data.ConfidenceScore,
+		Text:        responseText,                      // Use extracted text
+		Sender:      "fraiday-bot",                    // Add sender field (BOT_SENDER_NAME equivalent)
+		SenderName:  "fraiday-bot",                    // Add sender name field
+		SenderType:  "assistant",
+		SessionID:   message.SessionID,
+		Category:    models.MessageCategoryMessage,
+		Confidence:  confidenceScore,                   // Use extracted confidence score
+		Attachments: attachments,                       // Use converted attachments
 		Config: map[string]interface{}{
 			"ai_response": true,
 			"original_message_id": payload.MessageID,
 		},
 		Data: map[string]interface{}{
-			"close_session": aiResponse.Metadata.CloseSession,
+			"close_session": closeSession,
+			"meta_data":     answerData, // Add metadata like Python
 		},
 	}
 	
@@ -513,18 +546,24 @@ func (tw *TaskWorker) HandleChatWorkflow(ctx context.Context, kwargs map[string]
 		tw.logger.Info("Creating chat suggestion",
 			zap.String("message_id", payload.MessageID))
 		
-		// Publish suggestion created event
+		// Publish suggestion created event with full payload (matching Python)
+		suggestionPayload, err := tw.payloadService.CreateChatSuggestionPayload(ctx, responseMessage.ID.Hex())
+		if err != nil {
+			tw.logger.Error("Failed to create suggestion payload", zap.Error(err))
+			suggestionPayload = map[string]interface{}{
+				"id":         responseMessage.ID.Hex(),
+				"message_id": payload.MessageID,
+				"session_id": payload.SessionID,
+				"content":    aiResponse.Response,
+			}
+		}
+
 		_, err = tw.eventPublisherService.PublishChatSuggestionEvent(
 			ctx,
 			models.EventTypeChatSuggestionCreated,
 			responseMessage.ID.Hex(),
 			&payload.MessageID,
-			map[string]interface{}{
-				"message_id": payload.MessageID,
-				"session_id": payload.SessionID,
-				"content":    aiResponse.Response,
-				"metadata":   aiResponse.Metadata,
-			},
+			suggestionPayload,
 		)
 		if err != nil {
 			tw.logger.Error("Failed to publish suggestion created event", zap.Error(err))
@@ -534,17 +573,28 @@ func (tw *TaskWorker) HandleChatWorkflow(ctx context.Context, kwargs map[string]
 		tw.logger.Info("Creating chat message response",
 			zap.String("message_id", payload.MessageID))
 		
-		// Publish workflow completed event
+		// Publish workflow completed event with full message payloads (matching Python)
+		userMessagePayload, err := tw.payloadService.CreateChatMessagePayload(ctx, payload.MessageID)
+		if err != nil {
+			tw.logger.Error("Failed to create user message payload", zap.Error(err))
+			userMessagePayload = map[string]interface{}{"id": payload.MessageID}
+		}
+
+		aiMessagePayload, err := tw.payloadService.CreateChatMessagePayload(ctx, responseMessage.ID.Hex())
+		if err != nil {
+			tw.logger.Error("Failed to create AI message payload", zap.Error(err))
+			aiMessagePayload = map[string]interface{}{"id": responseMessage.ID.Hex()}
+		}
+
 		_, err = tw.eventPublisherService.PublishChatMessageEvent(
 			ctx,
 			models.EventTypeChatWorkflowCompleted,
 			responseMessage.ID.Hex(),
 			&payload.SessionID,
 			map[string]interface{}{
-				"user_message_id": payload.MessageID,
-				"ai_message_id":   responseMessage.ID.Hex(),
-				"session_id":      payload.SessionID,
-				"confidence_score": aiResponse.Data.ConfidenceScore,
+				"user_message": userMessagePayload,
+				"ai_message":   aiMessagePayload,
+				"session_id":   payload.SessionID,
 			},
 		)
 		if err != nil {
@@ -552,16 +602,17 @@ func (tw *TaskWorker) HandleChatWorkflow(ctx context.Context, kwargs map[string]
 		}
 		
 		// Check for handover scenario (confidence_score = 0)
-		if aiResponse.Data.ConfidenceScore == 0 {
+		if confidenceScore == 0 {
+			// Reuse the payloads we already created for consistency
 			_, err = tw.eventPublisherService.PublishChatMessageEvent(
 				ctx,
 				models.EventTypeChatWorkflowHandover,
 				responseMessage.ID.Hex(),
 				&payload.SessionID,
 				map[string]interface{}{
-					"user_message_id": payload.MessageID,
-					"ai_message_id":   responseMessage.ID.Hex(),
-					"session_id":      payload.SessionID,
+					"user_message": userMessagePayload,
+					"ai_message":   aiMessagePayload,
+					"session_id":   payload.SessionID,
 				},
 			)
 			if err != nil {
@@ -951,5 +1002,68 @@ func (tw *TaskWorker) getClientIDForEntity(ctx context.Context, entityType, enti
 	default:
 		return "", fmt.Errorf("unsupported entity type: %s", entityType)
 	}
+}
+
+// convertAIAttachments converts AI service attachments to ChatMessage attachments
+func convertAIAttachments(aiAttachments []service.AIAttachment) []models.Attachment {
+	if len(aiAttachments) == 0 {
+		return nil
+	}
+
+	attachments := make([]models.Attachment, len(aiAttachments))
+	for i, aiAttachment := range aiAttachments {
+		attachment := models.Attachment{
+			Type:     aiAttachment.Type,
+			FileName: aiAttachment.FileName,
+			FileURL:  aiAttachment.FileURL,
+			FileType: aiAttachment.FileType,
+		}
+
+		// Handle carousel data if present
+		if aiAttachment.Type == "carousel" && len(aiAttachment.Carousel.Items) > 0 {
+			// Convert carousel data to map[string]interface{} to match expected format
+			carouselData := make(map[string]interface{})
+			
+			// Convert carousel items to interface{} slice
+			items := make([]interface{}, len(aiAttachment.Carousel.Items))
+			for j, item := range aiAttachment.Carousel.Items {
+				itemData := map[string]interface{}{
+					"title":       item.Title,
+					"description": item.Description,
+				}
+				
+				// Add optional fields if present
+				if item.MediaURL != "" {
+					itemData["media_url"] = item.MediaURL
+				}
+				if item.MediaType != "" {
+					itemData["media_type"] = item.MediaType
+				}
+				if item.DefaultActionURL != "" {
+					itemData["default_action_url"] = item.DefaultActionURL
+				}
+				if len(item.Buttons) > 0 {
+					itemData["buttons"] = item.Buttons
+				}
+				
+				items[j] = itemData
+			}
+			
+			carouselData["items"] = items
+			attachment.Carousel = carouselData
+		}
+
+		// Handle top-level buttons if present (for non-carousel attachments)
+		if len(aiAttachment.Buttons) > 0 && aiAttachment.Type != "carousel" {
+			if attachment.Carousel == nil {
+				attachment.Carousel = make(map[string]interface{})
+			}
+			attachment.Carousel["buttons"] = aiAttachment.Buttons
+		}
+
+		attachments[i] = attachment
+	}
+
+	return attachments
 }
 

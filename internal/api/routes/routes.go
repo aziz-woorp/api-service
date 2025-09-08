@@ -10,6 +10,7 @@ import (
 	"github.com/fraiday-org/api-service/internal/config"
 	"github.com/fraiday-org/api-service/internal/repository"
 	"github.com/fraiday-org/api-service/internal/service"
+	"github.com/fraiday-org/api-service/internal/tasks"
 )
 
 func Register(r *gin.Engine, cfg *config.Config, logger *zap.Logger, mongoClient *mongo.Client) {
@@ -46,9 +47,36 @@ func Register(r *gin.Engine, cfg *config.Config, logger *zap.Logger, mongoClient
 	chatSessionService := service.NewChatSessionService(chatSessionRepo)
 	chatSessionHandler := handlers.NewChatSessionHandler(chatSessionService)
 
+	// Initialize event services for chat message events
+	eventRepo := repository.NewEventRepository(db)
+	eventService := service.NewEventService(eventRepo)
+	eventProcessorConfigRepo := repository.NewEventProcessorConfigRepository(db)
+	eventProcessorConfigService := service.NewEventProcessorConfigService(eventProcessorConfigRepo)
+	eventDeliveryRepo := repository.NewEventDeliveryRepository(db)
+	eventDeliveryAttemptRepo := repository.NewEventDeliveryAttemptRepository(db)
+	eventDeliveryTrackingService := service.NewEventDeliveryTrackingService(eventDeliveryRepo, eventDeliveryAttemptRepo)
+	
 	// Chat Messages
 	chatMsgRepo := repository.NewChatMessageRepository(db)
-	chatMsgService := service.NewChatMessageService(chatMsgRepo)
+	
+	// Initialize task client for event publishing to RabbitMQ
+	rabbitMQURL := cfg.GetRabbitMQURL()
+	taskClient, err := tasks.NewTaskClient(rabbitMQURL, logger)
+	if err != nil {
+		logger.Warn("Failed to create task client for API server, events will be processed directly", zap.Error(err))
+		taskClient = nil
+	}
+	
+	eventPublisherService := service.NewEventPublisherService(eventService, eventProcessorConfigService, eventDeliveryTrackingService, chatSessionRepo, chatMsgRepo, taskClient)
+	
+	// Initialize PayloadService
+	payloadService := service.NewPayloadService(nil, chatSessionService) // ChatMessageService will be set later
+	
+	chatMsgService := service.NewChatMessageService(chatMsgRepo, eventPublisherService, payloadService)
+	
+	// Update PayloadService with ChatMessageService
+	payloadService.ChatMessageService = chatMsgService
+	
 	chatMsgHandler := handlers.NewChatMessageHandler(chatMsgService, chatSessionService, clientService, clientChannelService)
 
 	r.POST("/api/v1/messages", chatMsgHandler.CreateMessage)
@@ -119,9 +147,7 @@ func Register(r *gin.Engine, cfg *config.Config, logger *zap.Logger, mongoClient
 	r.POST("/api/v1/events/process", eventsHandler.ProcessEvent)
 	r.GET("/api/v1/events/:event_id/status", eventsHandler.GetEventStatus)
 
-	// Event Processor Configs (Client-specific)
-	eventProcessorConfigRepo := repository.NewEventProcessorConfigRepository(db)
-	eventProcessorConfigService := service.NewEventProcessorConfigService(eventProcessorConfigRepo)
+	// Event Processor Configs (Client-specific) - reuse existing services
 	eventProcessorConfigHandler := handlers.NewEventProcessorConfigHandler(eventProcessorConfigService)
 
 	r.POST("/api/v1/clients/:client_id/processor-configs", eventProcessorConfigHandler.CreateProcessorConfig)
@@ -137,16 +163,8 @@ func Register(r *gin.Engine, cfg *config.Config, logger *zap.Logger, mongoClient
 	csatSessionRepo := repository.NewCSATSessionRepository(db)
 	csatResponseRepo := repository.NewCSATResponseRepository(db)
 	
-	// Event services for CSAT
-	eventRepo := repository.NewEventRepository(db)
-	eventService := service.NewEventService(eventRepo)
-	
-	// Event delivery tracking repositories and service
-	eventDeliveryRepo := repository.NewEventDeliveryRepository(db)
-	eventDeliveryAttemptRepo := repository.NewEventDeliveryAttemptRepository(db)
-	eventDeliveryTrackingService := service.NewEventDeliveryTrackingService(eventDeliveryRepo, eventDeliveryAttemptRepo)
-	
-	eventPublisherService := service.NewEventPublisherService(eventService, eventProcessorConfigService, eventDeliveryTrackingService, chatSessionRepo, chatMsgRepo, nil)
+	// CSAT Event Publisher Service - reuse existing services
+	csatEventPublisherService := service.NewEventPublisherService(eventService, eventProcessorConfigService, eventDeliveryTrackingService, chatSessionRepo, chatMsgRepo, nil)
 	
 	csatService := service.NewCSATService(
 		csatConfigRepo,
@@ -154,7 +172,7 @@ func Register(r *gin.Engine, cfg *config.Config, logger *zap.Logger, mongoClient
 		csatSessionRepo,
 		csatResponseRepo,
 		chatMsgRepo,
-		eventPublisherService,
+		csatEventPublisherService,
 	)
 	csatHandler := handlers.NewCSATHandler(csatService)
 
