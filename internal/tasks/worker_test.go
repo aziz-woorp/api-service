@@ -16,7 +16,7 @@ func TestTaskWorkerInitialization(t *testing.T) {
 	logger := zap.NewNop()
 	
 	// Test with invalid RabbitMQ URL (should fail gracefully)
-	worker, err := NewTaskWorker("amqp://invalid:invalid@localhost:5672/", logger, "http://localhost:8001", "test-token", nil)
+	worker, err := NewTaskWorker("amqp://invalid:invalid@localhost:5672/", logger, "http://localhost:8001", "test-token", nil, nil)
 	assert.Error(t, err)
 	assert.Nil(t, worker)
 }

@@ -31,10 +31,15 @@ func Register(r *gin.Engine, cfg *config.Config, logger *zap.Logger, mongoClient
 	metricsHandler := handlers.NewMetricsHandler(logger)
 	r.GET("/api/v1/metrics", metricsHandler.GetMetrics)
 
+	// Chat Sessions
+	chatSessionRepo := repository.NewChatSessionRepository(db)
+	chatSessionService := service.NewChatSessionService(chatSessionRepo)
+	chatSessionHandler := handlers.NewChatSessionHandler(chatSessionService)
+
 	// Chat Messages
 	chatMsgRepo := repository.NewChatMessageRepository(db)
 	chatMsgService := service.NewChatMessageService(chatMsgRepo)
-	chatMsgHandler := handlers.NewChatMessageHandler(chatMsgService)
+	chatMsgHandler := handlers.NewChatMessageHandler(chatMsgService, chatSessionService)
 
 	r.POST("/api/v1/messages", chatMsgHandler.CreateMessage)
 	r.GET("/api/v1/messages", chatMsgHandler.ListMessages)
@@ -49,11 +54,6 @@ func Register(r *gin.Engine, cfg *config.Config, logger *zap.Logger, mongoClient
 	r.POST("/api/v1/messages/:message_id/feedbacks", chatMsgFeedbackHandler.CreateFeedback)
 	r.GET("/api/v1/messages/:message_id/feedbacks", chatMsgFeedbackHandler.ListFeedbacks)
 	r.PATCH("/api/v1/messages/:message_id/feedbacks/:feedback_id", chatMsgFeedbackHandler.UpdateFeedback)
-
-	// Chat Sessions
-	chatSessionRepo := repository.NewChatSessionRepository(db)
-	chatSessionService := service.NewChatSessionService(chatSessionRepo)
-	chatSessionHandler := handlers.NewChatSessionHandler(chatSessionService)
 
 	r.POST("/api/v1/sessions", chatSessionHandler.CreateSession)
 	r.GET("/api/v1/sessions/:session_id", chatSessionHandler.GetSession)
@@ -141,7 +141,7 @@ func Register(r *gin.Engine, cfg *config.Config, logger *zap.Logger, mongoClient
 	eventDeliveryAttemptRepo := repository.NewEventDeliveryAttemptRepository(db)
 	eventDeliveryTrackingService := service.NewEventDeliveryTrackingService(eventDeliveryRepo, eventDeliveryAttemptRepo)
 	
-	eventPublisherService := service.NewEventPublisherService(eventService, eventProcessorConfigService, eventDeliveryTrackingService)
+	eventPublisherService := service.NewEventPublisherService(eventService, eventProcessorConfigService, eventDeliveryTrackingService, chatSessionRepo, chatMsgRepo, nil)
 	
 	csatService := service.NewCSATService(
 		csatConfigRepo,

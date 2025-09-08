@@ -107,8 +107,31 @@ func runWorker(cfg *config.Config, logger *zap.Logger, mongoClient *mongo.Client
 	// Initialize database service
 	databaseService := service.NewDatabaseService(logger, mongoClient, cfg.MongoDB)
 	
+	// Initialize event services (required for EventPublisherService)
+	db := mongoClient.Database(cfg.MongoDB)
+	eventRepo := repository.NewEventRepository(db)
+	eventService := service.NewEventService(eventRepo)
+	eventProcessorConfigRepo := repository.NewEventProcessorConfigRepository(db)
+	eventProcessorConfigService := service.NewEventProcessorConfigService(eventProcessorConfigRepo)
+	eventDeliveryRepo := repository.NewEventDeliveryRepository(db)
+	eventDeliveryAttemptRepo := repository.NewEventDeliveryAttemptRepository(db)
+	eventDeliveryTrackingService := service.NewEventDeliveryTrackingService(eventDeliveryRepo, eventDeliveryAttemptRepo)
+	
+	// Initialize chat repositories for client ID resolution
+	chatSessionRepo := repository.NewChatSessionRepository(db)
+	chatMessageRepo := repository.NewChatMessageRepository(db)
+	
+	// Initialize task client for publishing events to RabbitMQ
+	taskClient, err := tasks.NewTaskClient(rabbitMQURL, logger)
+	if err != nil {
+		logger.Fatal("Failed to create task client", zap.Error(err))
+	}
+	defer taskClient.Close()
+	
+	eventPublisherService := service.NewEventPublisherService(eventService, eventProcessorConfigService, eventDeliveryTrackingService, chatSessionRepo, chatMessageRepo, taskClient)
+	
 	// Initialize task worker
-	taskWorker, err := tasks.NewTaskWorker(rabbitMQURL, logger, cfg.AIServiceURL, cfg.SlackAIToken, databaseService)
+	taskWorker, err := tasks.NewTaskWorker(rabbitMQURL, logger, cfg.AIServiceURL, cfg.SlackAIToken, databaseService, eventPublisherService)
 	if err != nil {
 		logger.Fatal("Failed to create task worker", zap.Error(err))
 	}

@@ -238,6 +238,21 @@ func (s *EventProcessorConfigService) GetConfigsForEvent(
 	return configs, nil
 }
 
+// GetConfigsForEventAndClient retrieves configurations for a specific client that should process a specific event.
+func (s *EventProcessorConfigService) GetConfigsForEventAndClient(
+	ctx context.Context,
+	clientID primitive.ObjectID,
+	eventType models.EventType,
+	entityType models.EntityType,
+) ([]models.EventProcessorConfig, error) {
+	configs, err := s.Repo.GetConfigsForEventAndClient(ctx, clientID, eventType, entityType)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get configs for event and client: %w", err)
+	}
+
+	return configs, nil
+}
+
 // ToggleConfigStatus toggles the active status of a processor configuration.
 func (s *EventProcessorConfigService) ToggleConfigStatus(ctx context.Context, configID string) error {
 	id, err := primitive.ObjectIDFromHex(configID)

@@ -8,6 +8,7 @@ import (
 
 	amqp "github.com/rabbitmq/amqp091-go"
 	"go.uber.org/zap"
+	"github.com/fraiday-org/api-service/internal/models"
 )
 
 // TaskClient wraps RabbitMQ connection for task enqueueing
@@ -176,7 +177,7 @@ func (tc *TaskClient) EnqueueSuggestionWorkflow(ctx context.Context, messageID, 
 }
 
 // EnqueueEventProcessor enqueues an event processor task
-func (tc *TaskClient) EnqueueEventProcessor(ctx context.Context, eventID, eventType, entityType, entityID string, data map[string]interface{}) error {
+func (tc *TaskClient) EnqueueEventProcessor(ctx context.Context, eventID, eventType, entityType, entityID string, parentID *string, data map[string]interface{}) error {
 	payload := EventProcessorPayload{
 		EventID:    eventID,
 		EventType:  eventType,
@@ -184,6 +185,15 @@ func (tc *TaskClient) EnqueueEventProcessor(ctx context.Context, eventID, eventT
 		EntityID:   entityID,
 		Data:       data,
 	}
+	
+	if parentID != nil {
+		payload.ParentID = *parentID
+	}
 
 	return tc.publishTask(ctx, "events", TypeEventProcessor, payload)
+}
+
+// PublishEventProcessorTask publishes an event processor task (implements service.TaskClient interface)
+func (tc *TaskClient) PublishEventProcessorTask(ctx context.Context, eventID string, eventType models.EventType, entityType models.EntityType, entityID string, parentID *string, data map[string]interface{}) error {
+	return tc.EnqueueEventProcessor(ctx, eventID, string(eventType), string(entityType), entityID, parentID, data)
 }

@@ -28,7 +28,26 @@ func (s *ChatSessionService) CreateSession(ctx context.Context) (string, error) 
 	if err := s.Repo.Create(ctx, session); err != nil {
 		return "", err
 	}
+	// Return the session_id that client will use for future message creation
 	return session.SessionID, nil
+}
+
+func (s *ChatSessionService) GetOrCreateSessionBySessionID(ctx context.Context, sessionID string) (*models.ChatSession, error) {
+	// Try to find existing session by session_id
+	session, err := s.Repo.GetBySessionID(ctx, sessionID)
+	if err == nil {
+		return session, nil
+	}
+	
+	// If not found, create new session with this session_id
+	session = &models.ChatSession{
+		SessionID: sessionID,
+		Active:    true,
+	}
+	if err := s.Repo.Create(ctx, session); err != nil {
+		return nil, err
+	}
+	return session, nil
 }
 
 func (s *ChatSessionService) GetSession(ctx context.Context, id string) (*dto.ChatSessionResponse, error) {

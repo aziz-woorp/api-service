@@ -41,6 +41,15 @@ func (r *ChatSessionRepository) GetByID(ctx context.Context, id primitive.Object
 	return &session, nil
 }
 
+func (r *ChatSessionRepository) GetBySessionID(ctx context.Context, sessionID string) (*models.ChatSession, error) {
+	var session models.ChatSession
+	err := r.Collection.FindOne(ctx, bson.M{"session_id": sessionID}).Decode(&session)
+	if err != nil {
+		return nil, err
+	}
+	return &session, nil
+}
+
 // ListWithFilters implements basic filtering and pagination. Advanced aggregation (handover, etc.) can be added as needed.
 func (r *ChatSessionRepository) ListWithFilters(ctx context.Context, filter bson.M, skip, limit int64, sort bson.D) ([]models.ChatSession, int64, error) {
 	opts := options.Find().SetSkip(skip).SetLimit(limit).SetSort(sort)

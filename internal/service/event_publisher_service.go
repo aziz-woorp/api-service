@@ -7,6 +7,8 @@ import (
 	"log"
 
 	"github.com/fraiday-org/api-service/internal/models"
+	"github.com/fraiday-org/api-service/internal/repository"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 // EventPublisherService encapsulates business logic for event publishing.
@@ -14,6 +16,14 @@ type EventPublisherService struct {
 	EventService                  *EventService
 	EventProcessorConfigService   *EventProcessorConfigService
 	EventDeliveryTrackingService  *EventDeliveryTrackingService
+	ChatSessionRepo               *repository.ChatSessionRepository
+	ChatMessageRepo               *repository.ChatMessageRepository
+	TaskClient                    TaskClient // Interface for publishing tasks to RabbitMQ
+}
+
+// TaskClient defines the interface for publishing tasks to RabbitMQ
+type TaskClient interface {
+	PublishEventProcessorTask(ctx context.Context, eventID string, eventType models.EventType, entityType models.EntityType, entityID string, parentID *string, data map[string]interface{}) error
 }
 
 // NewEventPublisherService creates a new EventPublisherService.
@@ -21,11 +31,17 @@ func NewEventPublisherService(
 	eventService *EventService,
 	processorConfigService *EventProcessorConfigService,
 	deliveryTrackingService *EventDeliveryTrackingService,
+	chatSessionRepo *repository.ChatSessionRepository,
+	chatMessageRepo *repository.ChatMessageRepository,
+	taskClient TaskClient,
 ) *EventPublisherService {
 	return &EventPublisherService{
 		EventService:                 eventService,
 		EventProcessorConfigService:  processorConfigService,
 		EventDeliveryTrackingService: deliveryTrackingService,
+		ChatSessionRepo:              chatSessionRepo,
+		ChatMessageRepo:              chatMessageRepo,
+		TaskClient:                   taskClient,
 	}
 }
 
@@ -51,21 +67,64 @@ func (s *EventPublisherService) PublishEvent(
 		return nil, fmt.Errorf("failed to create event: %w", err)
 	}
 
-	// Trigger asynchronous event processing
-	go func() {
-		if err := s.processEventAsync(context.Background(), event); err != nil {
-			log.Printf("Failed to process event %s: %v", event.ID.Hex(), err)
+	// Publish event to RabbitMQ for asynchronous processing
+	if s.TaskClient != nil {
+		err = s.TaskClient.PublishEventProcessorTask(
+			ctx,
+			event.ID.Hex(),
+			event.EventType,
+			event.EntityType,
+			event.EntityID,
+			func() *string {
+				if event.ParentID == "" {
+					return nil
+				}
+				return &event.ParentID
+			}(),
+			event.Data,
+		)
+		if err != nil {
+			log.Printf("Failed to publish event processor task for event %s: %v", event.ID.Hex(), err)
+			// Fallback to sync processing
+			go func() {
+				if err := s.ProcessEventAsync(context.Background(), event); err != nil {
+					log.Printf("Failed to process event %s in fallback: %v", event.ID.Hex(), err)
+				}
+			}()
 		}
-	}()
+	} else {
+		// Fallback to synchronous processing if no task client available
+		go func() {
+			if err := s.ProcessEventAsync(context.Background(), event); err != nil {
+				log.Printf("Failed to process event %s: %v", event.ID.Hex(), err)
+			}
+		}()
+	}
 
 	return event, nil
 }
 
-// processEventAsync handles the asynchronous processing of events.
-func (s *EventPublisherService) processEventAsync(ctx context.Context, event *models.Event) error {
-	// Find matching processor configurations
-	configs, err := s.EventProcessorConfigService.GetConfigsForEvent(
+// ProcessEventAsync handles the asynchronous processing of events.
+func (s *EventPublisherService) ProcessEventAsync(ctx context.Context, event *models.Event) error {
+	// Get client ID from the entity
+	clientID, err := s.getClientIDForEntity(ctx, event.EntityType, event.EntityID)
+	if err != nil {
+		log.Printf("Could not determine client ID for event %s (type: %s, entity: %s): %v", 
+			event.ID.Hex(), event.EventType, event.EntityType, err)
+		// Don't fail the task - just skip processing if we can't find the client
+		return nil
+	}
+
+	if clientID == nil {
+		log.Printf("No client ID found for event %s (type: %s, entity: %s)",
+			event.ID.Hex(), event.EventType, event.EntityType)
+		return nil
+	}
+
+	// Find matching processor configurations for this client
+	configs, err := s.EventProcessorConfigService.GetConfigsForEventAndClient(
 		ctx,
+		*clientID,
 		event.EventType,
 		event.EntityType,
 	)
@@ -74,8 +133,8 @@ func (s *EventPublisherService) processEventAsync(ctx context.Context, event *mo
 	}
 
 	if len(configs) == 0 {
-		log.Printf("No processor configurations found for event %s (type: %s, entity: %s)",
-			event.ID.Hex(), event.EventType, event.EntityType)
+		log.Printf("No processor configurations found for event %s (type: %s, entity: %s, client: %s)",
+			event.ID.Hex(), event.EventType, event.EntityType, clientID.Hex())
 		return nil
 	}
 
@@ -246,4 +305,56 @@ func (s *EventPublisherService) GetEventStatus(ctx context.Context, eventID stri
 	}
 
 	return status, nil
+}
+
+// getClientIDForEntity determines the client ID for different entity types.
+func (s *EventPublisherService) getClientIDForEntity(ctx context.Context, entityType models.EntityType, entityID string) (*primitive.ObjectID, error) {
+	objectID, err := primitive.ObjectIDFromHex(entityID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid entity ID: %w", err)
+	}
+
+	switch entityType {
+	case models.EntityTypeChatMessage:
+		// Get message and then get session to find client
+		message, err := s.ChatMessageRepo.GetByID(ctx, objectID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get chat message: %w", err)
+		}
+		
+		session, err := s.ChatSessionRepo.GetByID(ctx, message.SessionID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get chat session: %w", err)
+		}
+		
+		if session.Client == nil {
+			return nil, fmt.Errorf("chat session has no client ID")
+		}
+		
+		return session.Client, nil
+
+	case models.EntityTypeChatSession:
+		// Get session directly to find client
+		session, err := s.ChatSessionRepo.GetByID(ctx, objectID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get chat session: %w", err)
+		}
+		
+		return session.Client, nil
+
+	case models.EntityTypeChatSuggestion:
+		// For suggestions, we might need to implement ChatSuggestionRepository if available
+		// For now, return nil to indicate unsupported
+		log.Printf("Client ID resolution for chat suggestions not yet implemented")
+		return nil, nil
+
+	case models.EntityTypeAIService:
+		// For AI service events, we need to find the related entity through parent_id
+		// This would require additional event lookup logic
+		log.Printf("Client ID resolution for AI service events not yet implemented")
+		return nil, nil
+
+	default:
+		return nil, fmt.Errorf("unsupported entity type: %s", entityType)
+	}
 }

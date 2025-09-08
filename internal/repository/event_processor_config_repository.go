@@ -157,6 +157,35 @@ func (r *EventProcessorConfigRepository) GetConfigsForEvent(
 	return r.List(ctx, filter, 0, 0)
 }
 
+// GetConfigsForEventAndClient retrieves configurations for a specific client that should process a specific event.
+func (r *EventProcessorConfigRepository) GetConfigsForEventAndClient(
+	ctx context.Context,
+	clientID primitive.ObjectID,
+	eventType models.EventType,
+	entityType models.EntityType,
+) ([]models.EventProcessorConfig, error) {
+	filter := bson.M{
+		"client":    clientID,
+		"is_active": true,
+		"$and": []bson.M{
+			{
+				"$or": []bson.M{
+					{"event_types": bson.M{"$in": []models.EventType{eventType}}},
+					{"event_types": bson.M{"$size": 0}}, // Empty array means all events
+				},
+			},
+			{
+				"$or": []bson.M{
+					{"entity_types": bson.M{"$in": []models.EntityType{entityType}}},
+					{"entity_types": bson.M{"$size": 0}}, // Empty array means all entities
+				},
+			},
+		},
+	}
+
+	return r.List(ctx, filter, 0, 0)
+}
+
 // Count returns the total number of event processor configurations matching the filter.
 func (r *EventProcessorConfigRepository) Count(ctx context.Context, filter map[string]interface{}) (int64, error) {
 	count, err := r.collection.CountDocuments(ctx, filter)

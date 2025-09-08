@@ -16,12 +16,16 @@ import (
 
 // ChatMessageHandler provides HTTP handlers for chat messages.
 type ChatMessageHandler struct {
-	Service *service.ChatMessageService
+	Service        *service.ChatMessageService
+	SessionService *service.ChatSessionService
 }
 
 // NewChatMessageHandler creates a new ChatMessageHandler.
-func NewChatMessageHandler(svc *service.ChatMessageService) *ChatMessageHandler {
-	return &ChatMessageHandler{Service: svc}
+func NewChatMessageHandler(svc *service.ChatMessageService, sessionSvc *service.ChatSessionService) *ChatMessageHandler {
+	return &ChatMessageHandler{
+		Service:        svc,
+		SessionService: sessionSvc,
+	}
 }
 
 // CreateMessage handles POST /messages
@@ -38,10 +42,10 @@ func (h *ChatMessageHandler) CreateMessage(c *gin.Context) {
 		return
 	}
 
-	// Convert session ID to ObjectID
-	sessionID := service.ParseObjectID(req.SessionID)
-	if sessionID == nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid session_id"})
+	// Get or create session by session_id (matching Python logic)
+	session, err := h.SessionService.GetOrCreateSessionBySessionID(c.Request.Context(), req.SessionID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get or create session"})
 		return
 	}
 
@@ -50,7 +54,7 @@ func (h *ChatMessageHandler) CreateMessage(c *gin.Context) {
 		Sender:      req.Sender,
 		SenderName:  req.SenderName,
 		SenderType:  req.SenderType,
-		SessionID:   *sessionID,
+		SessionID:   session.ID, // Use the session's MongoDB _id
 		Text:        req.Text,
 		Attachments: req.Attachments,
 		Data:        req.Data,

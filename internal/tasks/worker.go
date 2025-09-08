@@ -24,21 +24,21 @@ const (
 
 // TaskWorker wraps RabbitMQ connection for task processing
 type TaskWorker struct {
-	conn            *amqp.Connection
-	channel         *amqp.Channel
-	logger          *zap.Logger
-	webhookService  *service.WebhookService
-	aiService       *service.AIService
-	databaseService *service.DatabaseService
-	queues          []string
-	concurrency     int
-	wg              sync.WaitGroup
-	ctx             context.Context
-	cancel          context.CancelFunc
+	conn                   *amqp.Connection
+	channel                *amqp.Channel
+	logger                 *zap.Logger
+	aiService              *service.AIService
+	databaseService        *service.DatabaseService
+	eventPublisherService  *service.EventPublisherService
+	queues                 []string
+	concurrency            int
+	wg                     sync.WaitGroup
+	ctx                    context.Context
+	cancel                 context.CancelFunc
 }
 
 // NewTaskWorker creates a new task worker
-func NewTaskWorker(rabbitMQURL string, logger *zap.Logger, aiURL, aiToken string, databaseService *service.DatabaseService) (*TaskWorker, error) {
+func NewTaskWorker(rabbitMQURL string, logger *zap.Logger, aiURL, aiToken string, databaseService *service.DatabaseService, eventPublisherService *service.EventPublisherService) (*TaskWorker, error) {
 	conn, err := amqp.Dial(rabbitMQURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to RabbitMQ: %w", err)
@@ -64,21 +64,20 @@ func NewTaskWorker(rabbitMQURL string, logger *zap.Logger, aiURL, aiToken string
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	// Initialize services with minimal dependencies for now
-	webhookService := service.NewWebhookService(logger, nil)
+	// Initialize AI service
 	aiService := service.NewAIService(logger, aiURL, aiToken)
 
 	return &TaskWorker{
-		conn:            conn,
-		channel:         channel,
-		logger:          logger,
-		webhookService:  webhookService,
-		aiService:       aiService,
-		databaseService: databaseService,
-		queues:          []string{"chat_workflow", "events", "default"},
-		concurrency:     10,
-		ctx:             ctx,
-		cancel:          cancel,
+		conn:                  conn,
+		channel:               channel,
+		logger:                logger,
+		aiService:             aiService,
+		databaseService:       databaseService,
+		eventPublisherService: eventPublisherService,
+		queues:                []string{"chat_workflow", "events", "default"},
+		concurrency:           10,
+		ctx:                   ctx,
+		cancel:                cancel,
 	}, nil
 }
 
@@ -297,8 +296,20 @@ func (tw *TaskWorker) HandleChatWorkflow(ctx context.Context, kwargs map[string]
 	// This mirrors the generate_ai_response_task from Python backend
 	
 	// 1. Publish processing event
-	tw.logger.Info("Publishing chat workflow processing event",
-		zap.String("message_id", payload.MessageID))
+	_, err = tw.eventPublisherService.PublishChatMessageEvent(
+		ctx,
+		models.EventTypeChatWorkflowProcessing,
+		payload.MessageID,
+		&payload.SessionID,
+		map[string]interface{}{
+			"status":     "ai_processing_started",
+			"session_id": payload.SessionID,
+		},
+	)
+	if err != nil {
+		tw.logger.Error("Failed to publish processing event", zap.Error(err))
+		// Don't return error, continue with processing
+	}
 	
 	// 2. Process AI request
 	tw.logger.Info("Processing AI request",
@@ -309,6 +320,23 @@ func (tw *TaskWorker) HandleChatWorkflow(ctx context.Context, kwargs map[string]
 	message, err := tw.databaseService.GetChatMessage(ctx, payload.MessageID)
 	if err != nil {
 		tw.logger.Error("Failed to get message from database", zap.Error(err))
+		
+		// Publish error event
+		_, publishErr := tw.eventPublisherService.PublishChatMessageEvent(
+			ctx,
+			models.EventTypeChatWorkflowError,
+			payload.MessageID,
+			&payload.SessionID,
+			map[string]interface{}{
+				"error":      err.Error(),
+				"session_id": payload.SessionID,
+				"stage":      "message_retrieval",
+			},
+		)
+		if publishErr != nil {
+			tw.logger.Error("Failed to publish error event", zap.Error(publishErr))
+		}
+		
 		return fmt.Errorf("failed to get message: %w", err)
 	}
 	
@@ -328,6 +356,23 @@ func (tw *TaskWorker) HandleChatWorkflow(ctx context.Context, kwargs map[string]
 	
 	if err != nil {
 		tw.logger.Error("Failed to process AI request", zap.Error(err))
+		
+		// Publish error event
+		_, publishErr := tw.eventPublisherService.PublishChatMessageEvent(
+			ctx,
+			models.EventTypeChatWorkflowError,
+			payload.MessageID,
+			&payload.SessionID,
+			map[string]interface{}{
+				"error":      err.Error(),
+				"session_id": payload.SessionID,
+				"stage":      "ai_processing",
+			},
+		)
+		if publishErr != nil {
+			tw.logger.Error("Failed to publish error event", zap.Error(publishErr))
+		}
+		
 		return fmt.Errorf("AI processing failed: %w", err)
 	}
 	
@@ -337,10 +382,11 @@ func (tw *TaskWorker) HandleChatWorkflow(ctx context.Context, kwargs map[string]
 	
 	// Save AI response to database
 	responseMessage := &service.ChatMessage{
-		Text:      aiResponse.Response,
+		Text:       aiResponse.Response,
 		SenderType: "assistant",
 		SessionID:  message.SessionID,
 		Category:   models.MessageCategoryMessage,
+		Confidence: aiResponse.Data.ConfidenceScore,
 		Config: map[string]interface{}{
 			"ai_response": true,
 			"original_message_id": payload.MessageID,
@@ -363,42 +409,62 @@ func (tw *TaskWorker) HandleChatWorkflow(ctx context.Context, kwargs map[string]
 			zap.String("message_id", payload.MessageID))
 		
 		// Publish suggestion created event
-		tw.logger.Info("Publishing suggestion created event",
-			zap.String("message_id", payload.MessageID))
+		_, err = tw.eventPublisherService.PublishChatSuggestionEvent(
+			ctx,
+			models.EventTypeChatSuggestionCreated,
+			responseMessage.ID.Hex(),
+			&payload.MessageID,
+			map[string]interface{}{
+				"message_id": payload.MessageID,
+				"session_id": payload.SessionID,
+				"content":    aiResponse.Response,
+				"metadata":   aiResponse.Metadata,
+			},
+		)
+		if err != nil {
+			tw.logger.Error("Failed to publish suggestion created event", zap.Error(err))
+		}
 	} else {
 		// Create chat message response
 		tw.logger.Info("Creating chat message response",
 			zap.String("message_id", payload.MessageID))
 		
-		// Publish message created event
-		tw.logger.Info("Publishing message created event",
-			zap.String("message_id", payload.MessageID))
-	}
-	
-	// 4. Send webhook notifications
-	tw.logger.Info("Sending webhook notifications",
-		zap.String("message_id", payload.MessageID))
-	
-	// TODO: Get webhook URL from client configuration
-	webhookURL := "" // This should be retrieved from client config
-	
-	if webhookURL != "" {
-		messageData := map[string]interface{}{
-			"response":        aiResponse.Response,
-			"suggestion_mode": payload.SuggestionMode,
-			"suggestions":     aiResponse.Suggestions,
-			"metadata":        aiResponse.Metadata,
+		// Publish workflow completed event
+		_, err = tw.eventPublisherService.PublishChatMessageEvent(
+			ctx,
+			models.EventTypeChatWorkflowCompleted,
+			responseMessage.ID.Hex(),
+			&payload.SessionID,
+			map[string]interface{}{
+				"user_message_id": payload.MessageID,
+				"ai_message_id":   responseMessage.ID.Hex(),
+				"session_id":      payload.SessionID,
+				"confidence_score": aiResponse.Data.ConfidenceScore,
+			},
+		)
+		if err != nil {
+			tw.logger.Error("Failed to publish workflow completed event", zap.Error(err))
 		}
 		
-		err = tw.webhookService.SendChatMessageWebhook(ctx, webhookURL, payload.MessageID, payload.SessionID, messageData)
-		if err != nil {
-			tw.logger.Error("Failed to send webhook", zap.Error(err))
-			// Don't return error as this is not critical
+		// Check for handover scenario (confidence_score = 0)
+		if aiResponse.Data.ConfidenceScore == 0 {
+			_, err = tw.eventPublisherService.PublishChatMessageEvent(
+				ctx,
+				models.EventTypeChatWorkflowHandover,
+				responseMessage.ID.Hex(),
+				&payload.SessionID,
+				map[string]interface{}{
+					"user_message_id": payload.MessageID,
+					"ai_message_id":   responseMessage.ID.Hex(),
+					"session_id":      payload.SessionID,
+				},
+			)
+			if err != nil {
+				tw.logger.Error("Failed to publish handover event", zap.Error(err))
+			}
 		}
-	} else {
-		tw.logger.Debug("No webhook URL configured, skipping webhook notification")
 	}
-
+	
 	tw.logger.Info("Completed chat workflow task",
 		zap.String("message_id", payload.MessageID))
 
@@ -461,25 +527,6 @@ func (tw *TaskWorker) HandleSuggestionWorkflow(ctx context.Context, kwargs map[s
 		return fmt.Errorf("failed to save suggestion message: %w", err)
 	}
 
-	// 5. Send webhook notification (using a default webhook URL for now)
-	// TODO: Get webhook URL from client configuration
-	webhookURL := "" // This should be retrieved from client config
-	if webhookURL != "" {
-		suggestionData := map[string]interface{}{
-			"suggestion_id": aiResponse.MessageID + "_suggestion",
-			"content":       aiResponse.Response,
-			"suggestions":   aiResponse.Suggestions,
-			"original_message_id": payload.MessageID,
-		}
-
-		if err := tw.webhookService.SendSuggestionWebhook(ctx, webhookURL, aiResponse.MessageID+"_suggestion", payload.SessionID, suggestionData); err != nil {
-			tw.logger.Error("Failed to send suggestion webhook",
-				zap.Error(err),
-				zap.String("webhook_url", webhookURL))
-			// Don't fail the task if webhook fails
-		}
-	}
-
 	tw.logger.Info("Completed suggestion workflow task",
 		zap.String("message_id", payload.MessageID),
 		zap.String("suggestion_id", aiResponse.MessageID+"_suggestion"))
@@ -509,50 +556,19 @@ func (tw *TaskWorker) HandleEventProcessor(ctx context.Context, kwargs map[strin
 		zap.String("entity_type", payload.EntityType),
 		zap.String("entity_id", payload.EntityID))
 
-	// 2. Get client_id from the entity
-	clientID, err := tw.getClientIDForEntity(payload.EntityType, payload.EntityID)
-	if err != nil || clientID == "" {
-		tw.logger.Error("Could not determine client_id",
-			zap.String("entity_type", payload.EntityType),
-			zap.String("entity_id", payload.EntityID),
-			zap.Error(err))
-		return fmt.Errorf("could not determine client_id for %s:%s: %w", payload.EntityType, payload.EntityID, err)
+	// Get the event from the database
+	event, err := tw.eventPublisherService.EventService.GetEventByID(ctx, payload.EventID)
+	if err != nil {
+		return fmt.Errorf("failed to get event: %w", err)
 	}
 
-	// 4. Prepare event data for dispatching
-	dispatchData := map[string]interface{}{
-		"event_id":    payload.EventID,
-		"event_type":  payload.EventType,
-		"entity_type": payload.EntityType,
-		"entity_id":   payload.EntityID,
-		"parent_id":   payload.ParentID,
-		"data":        payload.Data,
-		"timestamp":   time.Now(),
-		"client_id":   clientID,
+	// Process the event using the existing async processing logic
+	if err := tw.eventPublisherService.ProcessEventAsync(ctx, event); err != nil {
+		return fmt.Errorf("failed to process event: %w", err)
 	}
 
-	// 5. Create a delivery record and dispatch
-	deliveryRecord := &service.EventDeliveryRecord{
-		EventID:     payload.EventID,
-		ProcessorID: "default", // Simplified for now
-		ClientID:    clientID,
-		EventType:   payload.EventType,
-		EntityType:  payload.EntityType,
-		Status:      "pending",
-		Attempts:    0,
-		CreatedAt:   time.Now(),
-		UpdatedAt:   time.Now(),
-		Payload:     dispatchData,
-	}
-
-	if err := tw.databaseService.CreateEventDeliveryRecord(ctx, deliveryRecord); err != nil {
-		tw.logger.Error("Failed to create delivery record", zap.Error(err))
-		return fmt.Errorf("failed to create delivery record: %w", err)
-	}
-
-	tw.logger.Info("Event processor task completed successfully",
-		zap.String("event_id", payload.EventID),
-		zap.String("client_id", clientID))
+	tw.logger.Info("Completed event processor task",
+		zap.String("event_id", payload.EventID))
 
 	return nil
 }
@@ -589,3 +605,4 @@ func (tw *TaskWorker) getClientIDForEntity(entityType, entityID string) (string,
 		return "", fmt.Errorf("unsupported entity type: %s", entityType)
 	}
 }
+
