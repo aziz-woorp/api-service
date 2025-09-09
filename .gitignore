@@ -41,6 +41,3 @@ deployment-python.yaml
 
 .DS_Store
 
-# Build binaries
-api
-build
