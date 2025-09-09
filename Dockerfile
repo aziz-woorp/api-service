@@ -32,9 +32,7 @@ RUN adduser -D -g '' appuser
 ARG SERVICE_NAME=api-service
 COPY --from=builder /app/${SERVICE_NAME} .
 
-# Copy env file (default to .env.docker, can be overridden at build time)
-ARG ENV_FILE=.env.docker
-COPY ${ENV_FILE} .env
+# Environment variables should be set at runtime via docker run -e or docker-compose
 
 # Expose port (default 8000, can be overridden by env)
 EXPOSE 8000
