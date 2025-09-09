@@ -20,7 +20,7 @@ func AuthMiddleware(logger *zap.Logger, db *mongo.Database) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Allow unauthenticated access to health endpoints
 		path := c.Request.URL.Path
-		if path == "/health" || path == "/ping" || path == "/readiness" || path == "/healthz" || path == "/metrics" || strings.HasPrefix(path, "/docs") {
+		if path == "/api/v1/health" || path == "/api/v1/ping" || path == "/api/v1/readiness" || path == "/api/v1/healthz" || path == "/api/v1/metrics" || strings.HasPrefix(path, "/docs") {
 			c.Next()
 			return
 		}
