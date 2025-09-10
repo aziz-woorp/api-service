@@ -47,13 +47,12 @@ func (r *CSATQuestionTemplateRepository) GetByID(ctx context.Context, id primiti
 	return &template, nil
 }
 
-// GetByClientAndChannel retrieves CSAT question templates by client and channel, ordered by order field.
-func (r *CSATQuestionTemplateRepository) GetByClientAndChannel(ctx context.Context, clientID, channelID primitive.ObjectID) ([]models.CSATQuestionTemplate, error) {
+// GetByConfigurationID retrieves CSAT question templates by configuration ID, ordered by order field.
+func (r *CSATQuestionTemplateRepository) GetByConfigurationID(ctx context.Context, configID primitive.ObjectID) ([]models.CSATQuestionTemplate, error) {
 	var templates []models.CSATQuestionTemplate
 	filter := bson.M{
-		"client":         clientID,
-		"client_channel": channelID,
-		"active":         true,
+		"csat_configuration_id": configID,
+		"active":                true,
 	}
 	
 	opts := options.Find().SetSort(bson.D{{Key: "order", Value: 1}})
@@ -68,6 +67,32 @@ func (r *CSATQuestionTemplateRepository) GetByClientAndChannel(ctx context.Conte
 	}
 	
 	return templates, nil
+}
+
+// UpdateQuestionsForConfiguration bulk updates questions for a configuration (non-transactional).
+// Note: This is not atomic, but works with standalone MongoDB instances.
+func (r *CSATQuestionTemplateRepository) UpdateQuestionsForConfiguration(ctx context.Context, configID primitive.ObjectID, questions []models.CSATQuestionTemplate) error {
+	// Delete existing questions for this configuration
+	_, err := r.collection.DeleteMany(ctx, bson.M{"csat_configuration_id": configID})
+	if err != nil {
+		return fmt.Errorf("failed to delete existing questions: %w", err)
+	}
+	
+	// Insert new questions if any provided
+	if len(questions) > 0 {
+		var docs []interface{}
+		for _, q := range questions {
+			q.CSATConfigurationID = configID
+			q.BeforeCreate()
+			docs = append(docs, q)
+		}
+		_, err = r.collection.InsertMany(ctx, docs)
+		if err != nil {
+			return fmt.Errorf("failed to insert questions: %w", err)
+		}
+	}
+	
+	return nil
 }
 
 // Update updates a CSAT question template.

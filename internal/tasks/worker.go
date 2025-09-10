@@ -1025,7 +1025,15 @@ func (tw *TaskWorker) getClientIDForEntity(ctx context.Context, entityType, enti
 			return "", fmt.Errorf("failed to get CSAT question: %w", err)
 		}
 		
-		return csatQuestion.Client.Hex(), nil
+		// Get CSAT configuration to find client ID
+		csatConfig, err := tw.databaseService.GetCSATConfiguration(ctx, csatQuestion.CSATConfigurationID.Hex())
+		if err != nil {
+			tw.logger.Error("Failed to get CSAT configuration for client resolution", 
+				zap.String("config_id", csatQuestion.CSATConfigurationID.Hex()), zap.Error(err))
+			return "", fmt.Errorf("failed to get CSAT configuration: %w", err)
+		}
+		
+		return csatConfig.Client.Hex(), nil
 
 	case string(models.EntityTypeCSATResponse):
 		// Get CSAT response, then get session to find client

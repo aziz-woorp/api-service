@@ -71,7 +71,7 @@ func Register(r *gin.Engine, cfg *config.Config, logger *zap.Logger, mongoClient
 	payloadService := service.NewPayloadService(nil, chatSessionService, chatSessionService.ThreadManager) // ChatMessageService will be set later
 	
 	// Initialize EventPublisherService with PayloadService
-	eventPublisherService := service.NewEventPublisherService(eventService, eventProcessorConfigService, eventDeliveryTrackingService, chatSessionRepo, chatMsgRepo, nil, nil, payloadService, taskClient)
+	eventPublisherService := service.NewEventPublisherService(eventService, eventProcessorConfigService, eventDeliveryTrackingService, chatSessionRepo, chatMsgRepo, nil, nil, nil, payloadService, taskClient)
 	
 	chatMsgService := service.NewChatMessageService(chatMsgRepo, eventPublisherService, payloadService)
 	
@@ -165,7 +165,7 @@ func Register(r *gin.Engine, cfg *config.Config, logger *zap.Logger, mongoClient
 	csatResponseRepo := repository.NewCSATResponseRepository(db)
 	
 	// CSAT Event Publisher Service - with CSAT repositories for proper client resolution
-	csatEventPublisherService := service.NewEventPublisherService(eventService, eventProcessorConfigService, eventDeliveryTrackingService, chatSessionRepo, chatMsgRepo, csatSessionRepo, csatQuestionRepo, payloadService, taskClient)
+	csatEventPublisherService := service.NewEventPublisherService(eventService, eventProcessorConfigService, eventDeliveryTrackingService, chatSessionRepo, chatMsgRepo, csatSessionRepo, csatQuestionRepo, csatConfigRepo, payloadService, taskClient)
 	
 	csatService := service.NewCSATService(
 		csatConfigRepo,
@@ -185,9 +185,14 @@ func Register(r *gin.Engine, cfg *config.Config, logger *zap.Logger, mongoClient
 	r.POST("/api/v1/csat/respond", csatHandler.RespondToCSAT)
 	r.GET("/api/v1/csat/sessions/:session_id", csatHandler.GetCSATSession)
 	
-	// CSAT configuration and questions (client-specific)
-	r.GET("/api/v1/clients/:client_id/channels/:channel_id/csat/config", csatHandler.GetCSATConfiguration)
-	r.PUT("/api/v1/clients/:client_id/channels/:channel_id/csat/config", csatHandler.UpdateCSATConfiguration)
-	r.GET("/api/v1/clients/:client_id/channels/:channel_id/csat/questions", csatHandler.GetCSATQuestions)
-	r.PUT("/api/v1/clients/:client_id/channels/:channel_id/csat/questions", csatHandler.UpdateCSATQuestions)
+	// Multi-CSAT configuration management
+	r.GET("/api/v1/clients/:client_id/channels/:channel_id/csat/configs", csatHandler.ListCSATConfigurations)
+	r.POST("/api/v1/clients/:client_id/channels/:channel_id/csat/configs", csatHandler.CreateCSATConfiguration)
+	r.GET("/api/v1/clients/:client_id/channels/:channel_id/csat/configs/:type", csatHandler.GetCSATConfigurationByType)
+	r.PUT("/api/v1/clients/:client_id/channels/:channel_id/csat/configs/:type", csatHandler.UpdateCSATConfigurationByType)
+	r.DELETE("/api/v1/clients/:client_id/channels/:channel_id/csat/configs/:type", csatHandler.DeleteCSATConfigurationByType)
+	
+	// Type-specific question management
+	r.GET("/api/v1/clients/:client_id/channels/:channel_id/csat/configs/:type/questions", csatHandler.GetCSATQuestionsByType)
+	r.PUT("/api/v1/clients/:client_id/channels/:channel_id/csat/configs/:type/questions", csatHandler.UpdateCSATQuestionsByType)
 }

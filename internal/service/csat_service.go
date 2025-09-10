@@ -9,6 +9,7 @@ import (
 
 	"github.com/fraiday-org/api-service/internal/models"
 	"github.com/fraiday-org/api-service/internal/repository"
+	"github.com/fraiday-org/api-service/internal/utils"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
@@ -65,8 +66,12 @@ func parseSessionID(sessionID string) (baseSessionID string, threadFromSessionID
 	return sessionID, ""
 }
 
-// TriggerCSATSurveyBySessionID triggers a CSAT survey using external session_id.
-func (s *CSATService) TriggerCSATSurveyBySessionID(ctx context.Context, sessionID string) (*models.CSATSession, error) {
+// TriggerCSATSurveyBySessionID triggers a CSAT survey using external session_id and CSAT type.
+func (s *CSATService) TriggerCSATSurveyBySessionID(ctx context.Context, sessionID string, csatType string) (*models.CSATSession, error) {
+	// Validate CSAT type format
+	if err := utils.ValidateCSATType(csatType); err != nil {
+		return nil, fmt.Errorf("invalid CSAT type format: %w", err)
+	}
 	// 0. Parse session ID to extract potential thread information
 	baseSessionID, threadFromSessionID := parseSessionID(sessionID)
 	
@@ -117,19 +122,19 @@ func (s *CSATService) TriggerCSATSurveyBySessionID(ctx context.Context, sessionI
 	}
 	
 	// 4. Trigger CSAT with resolved context
-	return s.triggerCSATSurvey(ctx, targetSessionContext, clientID, channelID, threadSessionID, threadContext)
+	return s.triggerCSATSurvey(ctx, targetSessionContext, clientID, channelID, csatType, threadSessionID, threadContext)
 }
 
 // triggerCSATSurvey is the internal method that creates the CSAT session.
-func (s *CSATService) triggerCSATSurvey(ctx context.Context, chatSessionID string, clientID, channelID primitive.ObjectID, threadSessionID *string, threadContext bool) (*models.CSATSession, error) {
-	// Check if CSAT is enabled for this client and channel
-	config, err := s.CSATConfigRepo.GetByClientAndChannel(ctx, clientID, channelID)
+func (s *CSATService) triggerCSATSurvey(ctx context.Context, chatSessionID string, clientID, channelID primitive.ObjectID, csatType string, threadSessionID *string, threadContext bool) (*models.CSATSession, error) {
+	// Get type-specific configuration
+	config, err := s.CSATConfigRepo.GetByClientChannelAndType(ctx, clientID, channelID, csatType)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get CSAT configuration: %w", err)
+		return nil, fmt.Errorf("failed to get CSAT configuration for type '%s': %w", csatType, err)
 	}
 	
 	if !config.Enabled {
-		return nil, fmt.Errorf("CSAT is not enabled for this client and channel")
+		return nil, fmt.Errorf("CSAT type '%s' is not enabled for this client and channel", csatType)
 	}
 	
 	// Check if there's already an active CSAT session for this chat session
@@ -141,13 +146,14 @@ func (s *CSATService) triggerCSATSurvey(ctx context.Context, chatSessionID strin
 	// Create new CSAT session
 	csatSession := &models.CSATSession{
 		ChatSessionID:        chatSessionID,
+		CSATConfigurationID:  config.ID,
 		Client:               clientID,
 		ClientChannel:        channelID,
 		ThreadSessionID:      threadSessionID,
 		ThreadContext:        threadContext,
 		Status:               "pending",
 		CurrentQuestionIndex: 0,
-		QuestionsSent:        make([]string, 0),
+		QuestionsSent:        make([]primitive.ObjectID, 0),
 	}
 	
 	if err := s.CSATSessionRepo.Create(ctx, csatSession); err != nil {
@@ -194,8 +200,8 @@ func (s *CSATService) SendNextQuestion(ctx context.Context, sessionID primitive.
 		return fmt.Errorf("failed to get CSAT session: %w", err)
 	}
 	
-	// Get all questions for this client and channel
-	questions, err := s.CSATQuestionRepo.GetByClientAndChannel(ctx, session.Client, session.ClientChannel)
+	// Get all questions for this CSAT configuration
+	questions, err := s.CSATQuestionRepo.GetByConfigurationID(ctx, session.CSATConfigurationID)
 	if err != nil {
 		return fmt.Errorf("failed to get CSAT questions: %w", err)
 	}
@@ -220,7 +226,7 @@ func (s *CSATService) SendNextQuestion(ctx context.Context, sessionID primitive.
 	
 	// Update session status and add question to sent list
 	session.Status = "in_progress"
-	session.QuestionsSent = append(session.QuestionsSent, currentQuestion.ID.Hex())
+	session.QuestionsSent = append(session.QuestionsSent, currentQuestion.ID)
 	if err := s.CSATSessionRepo.Update(ctx, session); err != nil {
 		return fmt.Errorf("failed to update CSAT session: %w", err)
 	}
@@ -316,7 +322,7 @@ func (s *CSATService) ProcessResponseBySessionID(ctx context.Context, sessionID,
 	}
 	
 	// 5. Validate question exists in current survey
-	questions, err := s.CSATQuestionRepo.GetByClientAndChannel(ctx, csatSession.Client, csatSession.ClientChannel)
+	questions, err := s.CSATQuestionRepo.GetByConfigurationID(ctx, csatSession.CSATConfigurationID)
 	if err != nil {
 		return "", fmt.Errorf("failed to get CSAT questions: %w", err)
 	}

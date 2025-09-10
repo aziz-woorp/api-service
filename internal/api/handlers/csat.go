@@ -8,7 +8,6 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 
 	"github.com/fraiday-org/api-service/internal/api/dto"
-	"github.com/fraiday-org/api-service/internal/models"
 	"github.com/fraiday-org/api-service/internal/service"
 )
 
@@ -32,8 +31,8 @@ func (h *CSATHandler) TriggerCSAT(c *gin.Context) {
 		return
 	}
 
-	// Trigger CSAT survey using external session_id
-	session, err := h.CSATService.TriggerCSATSurveyBySessionID(c.Request.Context(), req.SessionID)
+	// Trigger CSAT survey using external session_id and type
+	session, err := h.CSATService.TriggerCSATSurveyBySessionID(c.Request.Context(), req.SessionID, req.Type)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -73,190 +72,17 @@ func (h *CSATHandler) RespondToCSAT(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
-// GetCSATConfiguration retrieves CSAT configuration for a client and channel.
-func (h *CSATHandler) GetCSATConfiguration(c *gin.Context) {
-	clientID, err := primitive.ObjectIDFromHex(c.Param("client_id"))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid client_id"})
-		return
-	}
+// Legacy GetCSATConfiguration - REMOVED for multi-CSAT configuration support
+// Use ListCSATConfigurations or GetCSATConfigurationByType instead
 
-	channelID, err := primitive.ObjectIDFromHex(c.Param("channel_id"))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid channel_id"})
-		return
-	}
+// Legacy UpdateCSATConfiguration - REMOVED for multi-CSAT configuration support
+// Use CreateCSATConfiguration, UpdateCSATConfigurationByType instead
 
-	config, err := h.CSATService.CSATConfigRepo.GetByClientAndChannel(c.Request.Context(), clientID, channelID)
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "CSAT configuration not found"})
-		return
-	}
+// Legacy UpdateCSATQuestions - REMOVED for multi-CSAT configuration support
+// Use UpdateCSATQuestionsByType instead
 
-	response := dto.CSATConfigurationResponse{
-		ID:                config.ID.Hex(),
-		ClientID:          config.Client.Hex(),
-		ChannelID:         config.ClientChannel.Hex(),
-		Enabled:           config.Enabled,
-		TriggerConditions: config.TriggerConditions,
-		CreatedAt:         config.CreatedAt,
-		UpdatedAt:         config.UpdatedAt,
-	}
-
-	c.JSON(http.StatusOK, response)
-}
-
-// UpdateCSATConfiguration updates CSAT configuration for a client and channel.
-func (h *CSATHandler) UpdateCSATConfiguration(c *gin.Context) {
-	clientID, err := primitive.ObjectIDFromHex(c.Param("client_id"))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid client_id"})
-		return
-	}
-
-	channelID, err := primitive.ObjectIDFromHex(c.Param("channel_id"))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid channel_id"})
-		return
-	}
-
-	var req dto.CSATConfigurationRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	// Try to get existing configuration
-	config, err := h.CSATService.CSATConfigRepo.GetByClientAndChannel(c.Request.Context(), clientID, channelID)
-	if err != nil {
-		// Create new configuration if it doesn't exist
-		config = &models.CSATConfiguration{
-			Client:            clientID,
-			ClientChannel:     channelID,
-			Enabled:           req.Enabled,
-			TriggerConditions: req.TriggerConditions,
-		}
-		if err := h.CSATService.CSATConfigRepo.Create(c.Request.Context(), config); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-	} else {
-		// Update existing configuration
-		config.Enabled = req.Enabled
-		config.TriggerConditions = req.TriggerConditions
-		if err := h.CSATService.CSATConfigRepo.Update(c.Request.Context(), config); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-	}
-
-	response := dto.CSATConfigurationResponse{
-		ID:                config.ID.Hex(),
-		ClientID:          config.Client.Hex(),
-		ChannelID:         config.ClientChannel.Hex(),
-		Enabled:           config.Enabled,
-		TriggerConditions: config.TriggerConditions,
-		CreatedAt:         config.CreatedAt,
-		UpdatedAt:         config.UpdatedAt,
-	}
-
-	c.JSON(http.StatusOK, response)
-}
-
-// UpdateCSATQuestions updates CSAT questions for a client and channel.
-func (h *CSATHandler) UpdateCSATQuestions(c *gin.Context) {
-	clientID, err := primitive.ObjectIDFromHex(c.Param("client_id"))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid client_id"})
-		return
-	}
-
-	channelID, err := primitive.ObjectIDFromHex(c.Param("channel_id"))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid channel_id"})
-		return
-	}
-
-	var req dto.CSATQuestionsRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	var responses []dto.CSATQuestionResponse
-
-	// Create or update each question
-	for _, questionReq := range req.Questions {
-		question := &models.CSATQuestionTemplate{
-			Client:        clientID,
-			ClientChannel: channelID,
-			QuestionText:  questionReq.QuestionText,
-			Options:       questionReq.Options,
-			Order:         questionReq.Order,
-			Active:        questionReq.Active,
-		}
-
-		if err := h.CSATService.CSATQuestionRepo.Create(c.Request.Context(), question); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-
-		response := dto.CSATQuestionResponse{
-			ID:           question.ID.Hex(),
-			ClientID:     question.Client.Hex(),
-			ChannelID:    question.ClientChannel.Hex(),
-			QuestionText: question.QuestionText,
-			Options:      question.Options,
-			Order:        question.Order,
-			Active:       question.Active,
-			CreatedAt:    question.CreatedAt,
-			UpdatedAt:    question.UpdatedAt,
-		}
-
-		responses = append(responses, response)
-	}
-
-	c.JSON(http.StatusOK, gin.H{"questions": responses})
-}
-
-// GetCSATQuestions retrieves CSAT questions for a client and channel.
-func (h *CSATHandler) GetCSATQuestions(c *gin.Context) {
-	clientID, err := primitive.ObjectIDFromHex(c.Param("client_id"))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid client_id"})
-		return
-	}
-
-	channelID, err := primitive.ObjectIDFromHex(c.Param("channel_id"))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid channel_id"})
-		return
-	}
-
-	questions, err := h.CSATService.CSATQuestionRepo.GetByClientAndChannel(c.Request.Context(), clientID, channelID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	var responses []dto.CSATQuestionResponse
-	for _, question := range questions {
-		response := dto.CSATQuestionResponse{
-			ID:           question.ID.Hex(),
-			ClientID:     question.Client.Hex(),
-			ChannelID:    question.ClientChannel.Hex(),
-			QuestionText: question.QuestionText,
-			Options:      question.Options,
-			Order:        question.Order,
-			Active:       question.Active,
-			CreatedAt:    question.CreatedAt,
-			UpdatedAt:    question.UpdatedAt,
-		}
-		responses = append(responses, response)
-	}
-
-	c.JSON(http.StatusOK, gin.H{"questions": responses})
-}
+// Legacy GetCSATQuestions - REMOVED for multi-CSAT configuration support
+// Use GetCSATQuestionsByType instead
 
 // GetCSATSession retrieves a CSAT session by ID.
 func (h *CSATHandler) GetCSATSession(c *gin.Context) {
@@ -272,9 +98,16 @@ func (h *CSATHandler) GetCSATSession(c *gin.Context) {
 		return
 	}
 
+	// Convert ObjectIDs to strings for QuestionsSent
+	var questionsSentStrings []string
+	for _, questionID := range session.QuestionsSent {
+		questionsSentStrings = append(questionsSentStrings, questionID.Hex())
+	}
+
 	response := dto.CSATSessionResponse{
 		ID:                   session.ID.Hex(),
 		ChatSessionID:        session.ChatSessionID,
+		CSATConfigurationID:  session.CSATConfigurationID.Hex(),
 		ClientID:             session.Client.Hex(),
 		ChannelID:            session.ClientChannel.Hex(),
 		ThreadSessionID:      session.ThreadSessionID,
@@ -283,7 +116,7 @@ func (h *CSATHandler) GetCSATSession(c *gin.Context) {
 		TriggeredAt:          session.TriggeredAt,
 		CompletedAt:          session.CompletedAt,
 		CurrentQuestionIndex: session.CurrentQuestionIndex,
-		QuestionsSent:        session.QuestionsSent,
+		QuestionsSent:        questionsSentStrings,
 		CreatedAt:            session.CreatedAt,
 		UpdatedAt:            session.UpdatedAt,
 	}

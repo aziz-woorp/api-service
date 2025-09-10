@@ -135,7 +135,7 @@ func runWorker(cfg *config.Config, logger *zap.Logger, mongoClient *mongo.Client
 	payloadService := service.NewPayloadService(nil, chatSessionService, chatSessionService.ThreadManager) // ChatMessageService will be set later
 	
 	// Initialize EventPublisherService with PayloadService
-	eventPublisherService := service.NewEventPublisherService(eventService, eventProcessorConfigService, eventDeliveryTrackingService, chatSessionRepo, chatMessageRepo, nil, nil, payloadService, taskClient)
+	eventPublisherService := service.NewEventPublisherService(eventService, eventProcessorConfigService, eventDeliveryTrackingService, chatSessionRepo, chatMessageRepo, nil, nil, nil, payloadService, taskClient)
 	
 	// Initialize ChatMessageService with EventPublisherService and PayloadService
 	chatMessageService := service.NewChatMessageService(chatMessageRepo, eventPublisherService, payloadService)

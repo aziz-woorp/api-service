@@ -2,11 +2,14 @@
 
 ## Overview
 
-The CSAT (Customer Satisfaction) API provides functionality to trigger and manage customer satisfaction surveys within chat sessions. The API automatically handles session resolution, threading, and client/channel identification.
+The CSAT (Customer Satisfaction) API provides functionality to trigger and manage customer satisfaction surveys within chat sessions. The API supports **multiple CSAT configurations per client-channel** differentiated by **type**, allowing for different survey types like `ai_bot`, `post_chat`, `issue_resolution`, etc.
 
 ## Key Features
 
-- **Simplified Trigger API**: Only requires external `session_id`
+- **Multi-CSAT Configuration**: Support for multiple CSAT types per client-channel combination
+- **Type-Specific Questions**: Each CSAT type has its own set of question templates
+- **Type Validation**: Enforces snake_case naming convention (lowercase, underscores, no spaces)
+- **Simplified Trigger API**: Requires `session_id` and `type`
 - **Flexible Session ID Format**: Supports both simple and thread-appended session IDs
 - **Automatic Resolution**: Resolves client and channel from session
 - **Thread-aware**: Automatically detects and uses active threads when available
@@ -42,16 +45,21 @@ session_123_thread_456
 
 ### 1. Trigger CSAT Survey
 
-Triggers a CSAT survey for a chat session.
+Triggers a CSAT survey for a chat session with a specific CSAT type.
 
 **Endpoint:** `POST /api/v1/csat/trigger`
 
 **Request Body:**
 ```json
 {
-  "session_id": "external_session_123"
+  "session_id": "external_session_123",
+  "type": "ai_bot"
 }
 ```
+
+**Parameters:**
+- `session_id` (required): External chat session identifier
+- `type` (required): CSAT configuration type (must be snake_case: lowercase letters, numbers, underscores only)
 
 **Response:**
 ```json
@@ -64,17 +72,19 @@ Triggers a CSAT survey for a chat session.
 ```
 
 **Resolution Logic:**
-1. **Session ID Parsing**: Parses session_id to extract base session and potential thread info
+1. **Type Validation**: Validates CSAT type format (snake_case: lowercase, numbers, underscores only)
+2. **Session ID Parsing**: Parses session_id to extract base session and potential thread info
    - `session_123` → base: `session_123`, thread: none
    - `session_123_thread_456` → base: `session_123`, thread: `thread_456`
-2. **Session Lookup**: Finds chat session using base session_id (supports startsWith matching)
-3. **Client/Channel Extraction**: Extracts client and channel from chat session
-4. **Threading Determination**: 
+3. **Session Lookup**: Finds chat session using base session_id (supports startsWith matching)
+4. **Client/Channel Extraction**: Extracts client and channel from chat session
+5. **Configuration Lookup**: Gets type-specific CSAT configuration for client+channel+type
+6. **Threading Determination**: 
    - If session_id contains thread info, use that directly
    - Otherwise, check for active threads (30-minute inactivity threshold)
    - Fall back to main session if no threading available
-5. **Context Selection**: Uses appropriate session context (thread or main)
-6. **CSAT Creation**: Creates CSAT session with resolved context
+7. **Context Selection**: Uses appropriate session context (thread or main)
+8. **CSAT Creation**: Creates CSAT session with resolved context and configuration reference
 
 ### 2. Respond to CSAT
 
@@ -135,34 +145,194 @@ Retrieve details of a CSAT session.
 }
 ```
 
-## Configuration Endpoints
+## Multi-CSAT Configuration Endpoints
 
-### Get CSAT Configuration
+### List All CSAT Configurations
 
-**Endpoint:** `GET /api/v1/clients/{client_id}/channels/{channel_id}/csat/config`
+Retrieves all CSAT configurations for a client and channel.
 
-### Update CSAT Configuration
+**Endpoint:** `GET /api/v1/clients/{client_id}/channels/{channel_id}/csat/configs`
 
-**Endpoint:** `PUT /api/v1/clients/{client_id}/channels/{channel_id}/csat/config`
+**Response:**
+```json
+{
+  "configurations": [
+    {
+      "id": "507f1f77bcf86cd799439011",
+      "client_id": "507f1f77bcf86cd799439013",
+      "channel_id": "507f1f77bcf86cd799439014",
+      "type": "ai_bot",
+      "enabled": true,
+      "trigger_conditions": {
+        "trigger_after": "conversation_end"
+      },
+      "created_at": "2024-01-15T10:30:00Z",
+      "updated_at": "2024-01-15T10:30:00Z"
+    },
+    {
+      "id": "507f1f77bcf86cd799439012",
+      "client_id": "507f1f77bcf86cd799439013",
+      "channel_id": "507f1f77bcf86cd799439014",
+      "type": "post_chat",
+      "enabled": true,
+      "trigger_conditions": {
+        "trigger_after": "agent_handover"
+      },
+      "created_at": "2024-01-15T10:35:00Z",
+      "updated_at": "2024-01-15T10:35:00Z"
+    }
+  ]
+}
+```
+
+### Create CSAT Configuration
+
+Creates a new CSAT configuration with type specified in request body.
+
+**Endpoint:** `POST /api/v1/clients/{client_id}/channels/{channel_id}/csat/configs`
 
 **Request Body:**
 ```json
 {
+  "type": "ai_bot",
   "enabled": true,
   "trigger_conditions": {
-    "trigger_after_messages": 10,
-    "trigger_on_session_end": true
+    "trigger_after": "conversation_end",
+    "min_messages": 3
   }
 }
 ```
 
-### Get CSAT Questions
+**Response:**
+```json
+{
+  "id": "507f1f77bcf86cd799439011",
+  "client_id": "507f1f77bcf86cd799439013",
+  "channel_id": "507f1f77bcf86cd799439014",
+  "type": "ai_bot",
+  "enabled": true,
+  "trigger_conditions": {
+    "trigger_after": "conversation_end",
+    "min_messages": 3
+  },
+  "created_at": "2024-01-15T10:30:00Z",
+  "updated_at": "2024-01-15T10:30:00Z"
+}
+```
 
-**Endpoint:** `GET /api/v1/clients/{client_id}/channels/{channel_id}/csat/questions`
+### Get CSAT Configuration by Type
 
-### Update CSAT Questions
+Retrieves a specific CSAT configuration by type.
 
-**Endpoint:** `PUT /api/v1/clients/{client_id}/channels/{channel_id}/csat/questions`
+**Endpoint:** `GET /api/v1/clients/{client_id}/channels/{channel_id}/csat/configs/{type}`
+
+**Response:**
+```json
+{
+  "id": "507f1f77bcf86cd799439011",
+  "client_id": "507f1f77bcf86cd799439013",
+  "channel_id": "507f1f77bcf86cd799439014",
+  "type": "ai_bot",
+  "enabled": true,
+  "trigger_conditions": {
+    "trigger_after": "conversation_end"
+  },
+  "created_at": "2024-01-15T10:30:00Z",
+  "updated_at": "2024-01-15T10:30:00Z"
+}
+```
+
+### Update CSAT Configuration by Type
+
+Updates a specific CSAT configuration by type.
+
+**Endpoint:** `PUT /api/v1/clients/{client_id}/channels/{channel_id}/csat/configs/{type}`
+
+**Request Body:**
+```json
+{
+  "type": "ai_bot",
+  "enabled": false,
+  "trigger_conditions": {
+    "trigger_after": "conversation_end",
+    "min_messages": 5
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "id": "507f1f77bcf86cd799439011",
+  "client_id": "507f1f77bcf86cd799439013",
+  "channel_id": "507f1f77bcf86cd799439014",
+  "type": "ai_bot",
+  "enabled": false,
+  "trigger_conditions": {
+    "trigger_after": "conversation_end",
+    "min_messages": 5
+  },
+  "created_at": "2024-01-15T10:30:00Z",
+  "updated_at": "2024-01-15T10:35:00Z"
+}
+```
+
+### Delete CSAT Configuration by Type
+
+Deletes a specific CSAT configuration by type.
+
+**Endpoint:** `DELETE /api/v1/clients/{client_id}/channels/{channel_id}/csat/configs/{type}`
+
+**Response:**
+```json
+{
+  "message": "CSAT configuration for type 'ai_bot' deleted successfully"
+}
+```
+
+## Type-Specific Question Management
+
+### Get CSAT Questions by Type
+
+Retrieves all CSAT questions for a specific configuration type.
+
+**Endpoint:** `GET /api/v1/clients/{client_id}/channels/{channel_id}/csat/configs/{type}/questions`
+
+**Response:**
+```json
+{
+  "questions": [
+    {
+      "id": "507f1f77bcf86cd799439015",
+      "csat_configuration_id": "507f1f77bcf86cd799439011",
+      "question_text": "How satisfied are you with the AI assistance?",
+      "options": ["5 - Excellent", "4 - Good", "3 - Average", "2 - Poor", "1 - Very Poor"],
+      "order": 1,
+      "active": true,
+      "created_at": "2024-01-15T10:30:00Z",
+      "updated_at": "2024-01-15T10:30:00Z"
+    },
+    {
+      "id": "507f1f77bcf86cd799439016",
+      "csat_configuration_id": "507f1f77bcf86cd799439011",
+      "question_text": "How likely are you to recommend our AI service?",
+      "options": ["10", "9", "8", "7", "6", "5", "4", "3", "2", "1"],
+      "order": 2,
+      "active": true,
+      "created_at": "2024-01-15T10:30:00Z",
+      "updated_at": "2024-01-15T10:30:00Z"
+    }
+  ]
+}
+```
+
+### Update CSAT Questions by Type
+
+Updates all CSAT questions for a specific configuration type (replaces all existing questions).
+
+**Note**: This operation deletes all existing questions for the configuration and creates new ones. While not atomic, it works with standalone MongoDB instances.
+
+**Endpoint:** `PUT /api/v1/clients/{client_id}/channels/{channel_id}/csat/configs/{type}/questions`
 
 **Request Body:**
 ```json
@@ -320,25 +490,92 @@ Upstream services can:
 
 ## Usage Examples
 
-### Basic CSAT Trigger
+### Multi-CSAT Configuration Setup
 
-**Simple Session ID:**
+**Create AI Bot CSAT Configuration:**
 ```bash
-curl -X POST http://localhost:8000/api/v1/csat/trigger \
+curl -X POST http://localhost:8000/api/v1/clients/507f1f77bcf86cd799439013/channels/507f1f77bcf86cd799439014/csat/configs \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -d '{
-    "session_id": "my_external_session_123"
+    "type": "ai_bot",
+    "enabled": true,
+    "trigger_conditions": {
+      "trigger_after": "conversation_end",
+      "min_messages": 3
+    }
   }'
 ```
 
-**Thread-Appended Session ID:**
+**Create Post-Chat CSAT Configuration:**
+```bash
+curl -X POST http://localhost:8000/api/v1/clients/507f1f77bcf86cd799439013/channels/507f1f77bcf86cd799439014/csat/configs \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -d '{
+    "type": "post_chat",
+    "enabled": true,
+    "trigger_conditions": {
+      "trigger_after": "agent_handover"
+    }
+  }'
+```
+
+**Setup Questions for AI Bot CSAT:**
+```bash
+curl -X PUT http://localhost:8000/api/v1/clients/507f1f77bcf86cd799439013/channels/507f1f77bcf86cd799439014/csat/configs/ai_bot/questions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -d '{
+    "questions": [
+      {
+        "question_text": "How satisfied are you with the AI assistance?",
+        "options": ["5 - Excellent", "4 - Good", "3 - Average", "2 - Poor", "1 - Very Poor"],
+        "order": 1,
+        "active": true
+      },
+      {
+        "question_text": "How likely are you to recommend our AI service?",
+        "options": ["10", "9", "8", "7", "6", "5", "4", "3", "2", "1"],
+        "order": 2,
+        "active": true
+      }
+    ]
+  }'
+```
+
+### CSAT Survey Triggering
+
+**Trigger AI Bot CSAT:**
 ```bash
 curl -X POST http://localhost:8000/api/v1/csat/trigger \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -d '{
-    "session_id": "my_external_session_123_thread_456"
+    "session_id": "my_external_session_123",
+    "type": "ai_bot"
+  }'
+```
+
+**Trigger Post-Chat CSAT:**
+```bash
+curl -X POST http://localhost:8000/api/v1/csat/trigger \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -d '{
+    "session_id": "my_external_session_123",
+    "type": "post_chat"
+  }'
+```
+
+**Trigger with Thread-Appended Session ID:**
+```bash
+curl -X POST http://localhost:8000/api/v1/csat/trigger \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -d '{
+    "session_id": "my_external_session_123_thread_456",
+    "type": "ai_bot"
   }'
 ```
 
@@ -364,14 +601,45 @@ curl -X POST http://localhost:8000/api/v1/csat/respond \
 
 ## Data Models
 
+### CSAT Configuration
+
+```go
+type CSATConfiguration struct {
+    ID                string                 `json:"id"`
+    ClientID          string                 `json:"client_id"`
+    ChannelID         string                 `json:"channel_id"`
+    Type              string                 `json:"type"`
+    Enabled           bool                   `json:"enabled"`
+    TriggerConditions map[string]interface{} `json:"trigger_conditions,omitempty"`
+    CreatedAt         time.Time              `json:"created_at"`
+    UpdatedAt         time.Time              `json:"updated_at"`
+}
+```
+
+### CSAT Question Template
+
+```go
+type CSATQuestionTemplate struct {
+    ID                   string    `json:"id"`
+    CSATConfigurationID  string    `json:"csat_configuration_id"`
+    QuestionText         string    `json:"question_text"`
+    Options              []string  `json:"options"`
+    Order                int       `json:"order"`
+    Active               bool      `json:"active"`
+    CreatedAt            time.Time `json:"created_at"`
+    UpdatedAt            time.Time `json:"updated_at"`
+}
+```
+
 ### CSAT Session
 
 ```go
 type CSATSession struct {
     ID                   string     `json:"id"`
     ChatSessionID        string     `json:"chat_session_id"`
-    Client               string     `json:"client"`
-    ClientChannel        string     `json:"client_channel"`
+    CSATConfigurationID  string     `json:"csat_configuration_id"`
+    ClientID             string     `json:"client_id"`
+    ChannelID            string     `json:"channel_id"`
     ThreadSessionID      *string    `json:"thread_session_id,omitempty"`
     ThreadContext        bool       `json:"thread_context"`
     Status               string     `json:"status"`
@@ -391,23 +659,54 @@ type CSATSession struct {
 - **`completed`**: All questions answered
 - **`abandoned`**: User stopped responding
 
+## CSAT Type Naming Convention
+
+### Type Format Rules
+
+- **snake_case only**: Lowercase letters, numbers, and underscores
+- **No spaces**: Spaces are not allowed in type names
+- **No uppercase**: All letters must be lowercase
+- **Valid examples**: `ai_bot`, `post_chat`, `issue_resolution`, `agent_performance`
+- **Invalid examples**: `AI Bot`, `post-chat`, `PostChat`, `ai bot`
+
+### Common CSAT Types
+
+- **`ai_bot`**: Default type for AI assistance satisfaction
+- **`post_chat`**: Post-conversation satisfaction survey
+- **`issue_resolution`**: Issue resolution satisfaction
+- **`agent_performance`**: Agent performance evaluation
+- **`product_feedback`**: Product-specific feedback
+- **`support_quality`**: Support quality assessment
+
 ## Best Practices
 
-1. **Session ID Management**: Ensure external session IDs are unique and consistent
-2. **Error Handling**: Always handle potential errors (session not found, CSAT disabled)
-3. **Event Processing**: Subscribe to CSAT events for integration workflows
-4. **Thread Awareness**: Design UI to handle both threaded and non-threaded contexts
-5. **Configuration**: Set up CSAT configuration and questions before triggering surveys
+1. **Type Strategy**: Plan your CSAT types based on different touchpoints in your customer journey
+2. **Session ID Management**: Ensure external session IDs are unique and consistent
+3. **Type Validation**: Always validate CSAT type format before API calls
+4. **Configuration Setup**: Create configurations and questions before triggering surveys
+5. **Error Handling**: Handle type-specific errors (configuration not found, type disabled)
+6. **Event Processing**: Subscribe to CSAT events for integration workflows
+7. **Thread Awareness**: Design UI to handle both threaded and non-threaded contexts
+8. **Question Management**: Question updates replace all existing questions for a configuration (non-atomic operation)
 
 ## Migration Notes
 
-### Changes from Previous API
+### Breaking Changes from Previous API
 
-- **Simplified Request**: No longer requires `client_id` and `channel_id`
-- **Automatic Resolution**: Client and channel resolved from session
-- **Thread Support**: Added automatic thread detection and context
-- **Enhanced Events**: Events now include thread information
+- **Type Required**: All trigger requests now require a `type` parameter
+- **Multi-Configuration**: Support for multiple CSAT configurations per client-channel
+- **New Endpoints**: Configuration management moved to type-specific endpoints
+- **Question Association**: Questions now linked to configurations, not client-channel directly
+- **Enhanced Data Models**: Added CSATConfigurationID references throughout
+
+### Migration Steps
+
+1. **Update Trigger Calls**: Add `type` parameter to all CSAT trigger requests
+2. **Create Configurations**: Set up CSAT configurations for each desired type
+3. **Migrate Questions**: Associate existing questions with appropriate configurations
+4. **Update Integration**: Handle new event structures and API responses
+5. **Test Type Validation**: Ensure all type names follow snake_case convention
 
 ### Backward Compatibility
 
-This API is not backward compatible with previous versions. The old API has been completely replaced with the new simplified interface.
+This API introduces **breaking changes** and is **not backward compatible** with previous versions. The previous single-configuration API has been replaced with the new multi-configuration system.

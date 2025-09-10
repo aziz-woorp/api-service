@@ -20,6 +20,7 @@ type EventPublisherService struct {
 	ChatMessageRepo               *repository.ChatMessageRepository
 	CSATSessionRepo               *repository.CSATSessionRepository
 	CSATQuestionRepo              *repository.CSATQuestionTemplateRepository
+	CSATConfigRepo                *repository.CSATConfigurationRepository
 	PayloadService                *PayloadService // For session ID normalization
 	TaskClient                    TaskClient // Interface for publishing tasks to RabbitMQ
 }
@@ -39,6 +40,7 @@ func NewEventPublisherService(
 	chatMessageRepo *repository.ChatMessageRepository,
 	csatSessionRepo *repository.CSATSessionRepository,
 	csatQuestionRepo *repository.CSATQuestionTemplateRepository,
+	csatConfigRepo *repository.CSATConfigurationRepository,
 	payloadService *PayloadService,
 	taskClient TaskClient,
 ) *EventPublisherService {
@@ -50,6 +52,7 @@ func NewEventPublisherService(
 		ChatMessageRepo:              chatMessageRepo,
 		CSATSessionRepo:              csatSessionRepo,
 		CSATQuestionRepo:             csatQuestionRepo,
+		CSATConfigRepo:               csatConfigRepo,
 		PayloadService:               payloadService,
 		TaskClient:                   taskClient,
 	}
@@ -410,7 +413,7 @@ func (s *EventPublisherService) getClientIDForEntity(ctx context.Context, entity
 		return &csatSession.Client, nil
 
 	case models.EntityTypeCSATQuestion:
-		// Get CSAT question to extract client ID
+		// Get CSAT question and then get configuration to extract client ID
 		if s.CSATQuestionRepo == nil {
 			log.Printf("CSATQuestionRepo is nil, cannot resolve client ID for CSAT question")
 			return nil, nil
@@ -421,7 +424,18 @@ func (s *EventPublisherService) getClientIDForEntity(ctx context.Context, entity
 			return nil, fmt.Errorf("failed to get CSAT question: %w", err)
 		}
 		
-		return &csatQuestion.Client, nil
+		// Get the CSAT configuration to find the client ID
+		if s.CSATConfigRepo == nil {
+			log.Printf("CSATConfigRepo is nil, cannot resolve client ID for CSAT question")
+			return nil, nil
+		}
+		
+		csatConfig, err := s.CSATConfigRepo.GetByID(ctx, csatQuestion.CSATConfigurationID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get CSAT configuration: %w", err)
+		}
+		
+		return &csatConfig.Client, nil
 
 	default:
 		return nil, fmt.Errorf("unsupported entity type: %s", entityType)

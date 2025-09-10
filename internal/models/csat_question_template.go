@@ -7,17 +7,16 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
-// CSATQuestionTemplate represents a CSAT question template
+// CSATQuestionTemplate represents a CSAT question template linked to a configuration
 type CSATQuestionTemplate struct {
-	ID            primitive.ObjectID `bson:"_id,omitempty" json:"id"`
-	Client        primitive.ObjectID `bson:"client" json:"client" validate:"required"`
-	ClientChannel primitive.ObjectID `bson:"client_channel" json:"client_channel" validate:"required"`
-	QuestionText  string             `bson:"question_text" json:"question_text" validate:"required"`
-	Options       []string           `bson:"options" json:"options" validate:"required"`
-	Order         int                `bson:"order" json:"order" validate:"required"`
-	Active        bool               `bson:"active" json:"active"`
-	CreatedAt     time.Time          `bson:"created_at" json:"created_at"`
-	UpdatedAt     time.Time          `bson:"updated_at" json:"updated_at"`
+	ID                   primitive.ObjectID `bson:"_id,omitempty" json:"id"`
+	CSATConfigurationID  primitive.ObjectID `bson:"csat_configuration_id" json:"csat_configuration_id" validate:"required"`
+	QuestionText         string             `bson:"question_text" json:"question_text" validate:"required"`
+	Options              []string           `bson:"options" json:"options" validate:"required"`
+	Order                int                `bson:"order" json:"order" validate:"required"`
+	Active               bool               `bson:"active" json:"active"`
+	CreatedAt            time.Time          `bson:"created_at" json:"created_at"`
+	UpdatedAt            time.Time          `bson:"updated_at" json:"updated_at"`
 }
 
 // TableName returns the MongoDB collection name for CSATQuestionTemplate.

@@ -280,6 +280,26 @@ func (db *DatabaseService) GetCSATResponse(ctx context.Context, responseID strin
 	return &response, nil
 }
 
+// GetCSATConfiguration retrieves a CSAT configuration by ID
+func (db *DatabaseService) GetCSATConfiguration(ctx context.Context, configID string) (*models.CSATConfiguration, error) {
+	// Convert string ID to ObjectID
+	objectID, err := primitive.ObjectIDFromHex(configID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid CSAT configuration ID format: %s", configID)
+	}
+
+	var config models.CSATConfiguration
+	err = db.database.Collection("csat_configurations").FindOne(ctx, bson.M{"_id": objectID}).Decode(&config)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return nil, fmt.Errorf("CSAT configuration not found: %s", configID)
+		}
+		return nil, fmt.Errorf("failed to get CSAT configuration: %w", err)
+	}
+
+	return &config, nil
+}
+
 // HealthCheck performs a basic health check on the database connection
 func (db *DatabaseService) HealthCheck(ctx context.Context) error {
 	return db.mongoClient.Ping(ctx, nil)

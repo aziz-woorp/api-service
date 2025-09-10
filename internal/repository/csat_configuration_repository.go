@@ -46,21 +46,72 @@ func (r *CSATConfigurationRepository) GetByID(ctx context.Context, id primitive.
 	return &config, nil
 }
 
-// GetByClientAndChannel retrieves a CSAT configuration by client and channel.
-func (r *CSATConfigurationRepository) GetByClientAndChannel(ctx context.Context, clientID, channelID primitive.ObjectID) (*models.CSATConfiguration, error) {
+// GetByClientChannelAndType retrieves a CSAT configuration by client, channel and type.
+func (r *CSATConfigurationRepository) GetByClientChannelAndType(ctx context.Context, clientID, channelID primitive.ObjectID, csatType string) (*models.CSATConfiguration, error) {
 	var config models.CSATConfiguration
 	filter := bson.M{
 		"client":         clientID,
 		"client_channel": channelID,
+		"type":           csatType,
 	}
 	err := r.collection.FindOne(ctx, filter).Decode(&config)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
-			return nil, fmt.Errorf("CSAT configuration not found")
+			return nil, fmt.Errorf("CSAT configuration not found for type '%s'", csatType)
 		}
 		return nil, fmt.Errorf("failed to get CSAT configuration: %w", err)
 	}
 	return &config, nil
+}
+
+// GetAllByClientAndChannel retrieves all CSAT configurations for a client and channel.
+func (r *CSATConfigurationRepository) GetAllByClientAndChannel(ctx context.Context, clientID, channelID primitive.ObjectID) ([]models.CSATConfiguration, error) {
+	var configs []models.CSATConfiguration
+	filter := bson.M{
+		"client":         clientID,
+		"client_channel": channelID,
+	}
+	cursor, err := r.collection.Find(ctx, filter)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list CSAT configurations: %w", err)
+	}
+	defer cursor.Close(ctx)
+	
+	if err = cursor.All(ctx, &configs); err != nil {
+		return nil, fmt.Errorf("failed to decode CSAT configurations: %w", err)
+	}
+	return configs, nil
+}
+
+// GetTypesByClientAndChannel retrieves available CSAT types for a client and channel.
+func (r *CSATConfigurationRepository) GetTypesByClientAndChannel(ctx context.Context, clientID, channelID primitive.ObjectID) ([]string, error) {
+	pipeline := []bson.M{
+		{"$match": bson.M{
+			"client":         clientID,
+			"client_channel": channelID,
+		}},
+		{"$group": bson.M{
+			"_id": nil,
+			"types": bson.M{"$addToSet": "$type"},
+		}},
+	}
+	
+	cursor, err := r.collection.Aggregate(ctx, pipeline)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get CSAT types: %w", err)
+	}
+	defer cursor.Close(ctx)
+	
+	var result struct {
+		Types []string `bson:"types"`
+	}
+	if cursor.Next(ctx) {
+		if err := cursor.Decode(&result); err != nil {
+			return nil, fmt.Errorf("failed to decode CSAT types: %w", err)
+		}
+	}
+	
+	return result.Types, nil
 }
 
 // Update updates a CSAT configuration.
