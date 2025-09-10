@@ -122,7 +122,7 @@ func runWorker(cfg *config.Config, logger *zap.Logger, mongoClient *mongo.Client
 	chatMessageRepo := repository.NewChatMessageRepository(db)
 	
 	// Initialize task client for publishing events to RabbitMQ
-	taskClient, err := tasks.NewTaskClient(rabbitMQURL, logger)
+	taskClient, err := tasks.NewTaskClient(rabbitMQURL, logger, cfg)
 	if err != nil {
 		logger.Fatal("Failed to create task client", zap.Error(err))
 	}
@@ -141,7 +141,7 @@ func runWorker(cfg *config.Config, logger *zap.Logger, mongoClient *mongo.Client
 	chatMessageService.PayloadService = payloadService
 	
 	// Initialize task worker
-	taskWorker, err := tasks.NewTaskWorker(rabbitMQURL, logger, cfg.AIServiceURL, cfg.SlackAIToken, databaseService, eventPublisherService, payloadService, chatMessageService)
+	taskWorker, err := tasks.NewTaskWorker(rabbitMQURL, logger, cfg.AIServiceURL, cfg.SlackAIToken, databaseService, eventPublisherService, payloadService, chatMessageService, cfg)
 	if err != nil {
 		logger.Fatal("Failed to create task worker", zap.Error(err))
 	}

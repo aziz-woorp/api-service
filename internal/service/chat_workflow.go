@@ -18,6 +18,7 @@ type simpleTaskClient struct {
 	conn    *amqp.Connection
 	channel *amqp.Channel
 	logger  *zap.Logger
+	cfg     *config.Config
 }
 
 var (
@@ -43,7 +44,7 @@ func initTaskClient() {
 	// Get RabbitMQ URL from config
 	rabbitMQURL := taskClientConfig.GetRabbitMQURL()
 	
-	client, err := newSimpleTaskClient(rabbitMQURL, taskClientLogger)
+	client, err := newSimpleTaskClient(rabbitMQURL, taskClientLogger, taskClientConfig)
 	if err != nil {
 		taskClientLogger.Error("Failed to create task client", 
 			zap.Error(err),
@@ -56,7 +57,7 @@ func initTaskClient() {
 }
 
 // newSimpleTaskClient creates a simple task client
-func newSimpleTaskClient(rabbitMQURL string, logger *zap.Logger) (*simpleTaskClient, error) {
+func newSimpleTaskClient(rabbitMQURL string, logger *zap.Logger, cfg *config.Config) (*simpleTaskClient, error) {
 	conn, err := amqp.Dial(rabbitMQURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to RabbitMQ: %w", err)
@@ -72,6 +73,7 @@ func newSimpleTaskClient(rabbitMQURL string, logger *zap.Logger) (*simpleTaskCli
 		conn:    conn,
 		channel: channel,
 		logger:  logger,
+		cfg:     cfg,
 	}
 
 	// Declare queues
@@ -85,7 +87,7 @@ func newSimpleTaskClient(rabbitMQURL string, logger *zap.Logger) (*simpleTaskCli
 
 // declareQueues declares all required queues
 func (tc *simpleTaskClient) declareQueues() error {
-	queues := []string{"chat_workflow", "events", "default"}
+	queues := []string{tc.cfg.CeleryDefaultQueue, tc.cfg.CeleryEventsQueue, "default"}
 
 	for _, queue := range queues {
 		_, err := tc.channel.QueueDeclare(
@@ -190,7 +192,7 @@ func TriggerChatWorkflow(ctx context.Context, messageID string, sessionID string
 			"session_id": sessionID,
 		}
 		
-		if err := taskClient.publishTask(ctx, "chat_workflow", "chat_workflow", payload); err != nil {
+		if err := taskClient.publishTask(ctx, taskClient.cfg.CeleryDefaultQueue, "chat_workflow", payload); err != nil {
 			taskClientLogger.Error("Failed to enqueue chat workflow task", 
 				zap.String("message_id", messageID),
 				zap.String("session_id", sessionID),
@@ -222,7 +224,7 @@ func TriggerSuggestionWorkflow(ctx context.Context, messageID string, sessionID 
 			"session_id": sessionID,
 		}
 		
-		if err := taskClient.publishTask(ctx, "chat_workflow", "suggestion_workflow", payload); err != nil {
+		if err := taskClient.publishTask(ctx, taskClient.cfg.CeleryDefaultQueue, "suggestion_workflow", payload); err != nil {
 			taskClientLogger.Error("Failed to enqueue suggestion workflow task",
 				zap.String("message_id", messageID), 
 				zap.String("session_id", sessionID),

@@ -13,6 +13,7 @@ import (
 	amqp "github.com/rabbitmq/amqp091-go"
 	"go.uber.org/zap"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"github.com/fraiday-org/api-service/internal/config"
 	"github.com/fraiday-org/api-service/internal/models"
 	"github.com/fraiday-org/api-service/internal/service"
 )
@@ -39,13 +40,14 @@ type TaskWorker struct {
 	taskClient                *TaskClient
 	queues                    []string
 	concurrency               int
+	cfg                       *config.Config
 	wg                        sync.WaitGroup
 	ctx                       context.Context
 	cancel                    context.CancelFunc
 }
 
 // NewTaskWorker creates a new task worker
-func NewTaskWorker(rabbitMQURL string, logger *zap.Logger, aiURL, aiToken string, databaseService *service.DatabaseService, eventPublisherService *service.EventPublisherService, payloadService *service.PayloadService, chatMessageService *service.ChatMessageService) (*TaskWorker, error) {
+func NewTaskWorker(rabbitMQURL string, logger *zap.Logger, aiURL, aiToken string, databaseService *service.DatabaseService, eventPublisherService *service.EventPublisherService, payloadService *service.PayloadService, chatMessageService *service.ChatMessageService, cfg *config.Config) (*TaskWorker, error) {
 	conn, err := amqp.Dial(rabbitMQURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to RabbitMQ: %w", err)
@@ -78,7 +80,7 @@ func NewTaskWorker(rabbitMQURL string, logger *zap.Logger, aiURL, aiToken string
 	processorDispatchService := service.NewProcessorDispatchService(logger, conn)
 	
 	// Initialize TaskClient for enqueueing tasks
-	taskClient, err := NewTaskClient(rabbitMQURL, logger)
+	taskClient, err := NewTaskClient(rabbitMQURL, logger, cfg)
 	if err != nil {
 		conn.Close()
 		return nil, fmt.Errorf("failed to create task client: %w", err)
@@ -95,8 +97,9 @@ func NewTaskWorker(rabbitMQURL string, logger *zap.Logger, aiURL, aiToken string
 		payloadService:           payloadService,
 		chatMessageService:       chatMessageService,
 		taskClient:               taskClient,
-		queues:                   []string{"chat_workflow", "events", "default"},
+		queues:                   []string{cfg.CeleryDefaultQueue, cfg.CeleryEventsQueue, "default"},
 		concurrency:              10,
+		cfg:                      cfg,
 		ctx:                      ctx,
 		cancel:                   cancel,
 	}, nil
@@ -336,7 +339,7 @@ func (tw *TaskWorker) scheduleRetry(originalMsg amqp.Delivery, taskType string, 
 		amqp.Table{
 			"x-message-ttl":             int64(countdown.Milliseconds()),
 			"x-dead-letter-exchange":    "",
-			"x-dead-letter-routing-key": "events",
+			"x-dead-letter-routing-key": tw.cfg.CeleryEventsQueue,
 		},
 	)
 	if err != nil {

@@ -9,7 +9,16 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
+	"github.com/fraiday-org/api-service/internal/config"
 )
+
+// getTestConfig returns a test configuration with default queue names
+func getTestConfig() *config.Config {
+	return &config.Config{
+		CeleryDefaultQueue: "chat_workflow",
+		CeleryEventsQueue:  "events",
+	}
+}
 
 // TestTaskWorkerInitialization tests that TaskWorker can be initialized properly
 func TestTaskWorkerInitialization(t *testing.T) {
@@ -108,13 +117,14 @@ func TestTaskRouting(t *testing.T) {
 
 // TestQueueDeclaration tests queue declaration logic
 func TestQueueDeclaration(t *testing.T) {
-	queues := []string{"chat_workflow", "events", "default"}
+	cfg := getTestConfig()
+	queues := []string{cfg.CeleryDefaultQueue, cfg.CeleryEventsQueue, "default"}
 	
 	// Test that all expected queues are present
 	expectedQueues := map[string]bool{
-		"chat_workflow": false,
-		"events":        false,
-		"default":       false,
+		cfg.CeleryDefaultQueue: false,
+		cfg.CeleryEventsQueue:  false,
+		"default":              false,
 	}
 	
 	for _, queue := range queues {

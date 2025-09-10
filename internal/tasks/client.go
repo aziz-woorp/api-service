@@ -8,6 +8,7 @@ import (
 
 	amqp "github.com/rabbitmq/amqp091-go"
 	"go.uber.org/zap"
+	"github.com/fraiday-org/api-service/internal/config"
 	"github.com/fraiday-org/api-service/internal/models"
 )
 
@@ -16,10 +17,11 @@ type TaskClient struct {
 	conn    *amqp.Connection
 	channel *amqp.Channel
 	logger  *zap.Logger
+	cfg     *config.Config
 }
 
 // NewTaskClient creates a new task client
-func NewTaskClient(rabbitMQURL string, logger *zap.Logger) (*TaskClient, error) {
+func NewTaskClient(rabbitMQURL string, logger *zap.Logger, cfg *config.Config) (*TaskClient, error) {
 	conn, err := amqp.Dial(rabbitMQURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to RabbitMQ: %w", err)
@@ -35,6 +37,7 @@ func NewTaskClient(rabbitMQURL string, logger *zap.Logger) (*TaskClient, error) 
 		conn:    conn,
 		channel: channel,
 		logger:  logger,
+		cfg:     cfg,
 	}
 
 	// Declare queues
@@ -49,8 +52,8 @@ func NewTaskClient(rabbitMQURL string, logger *zap.Logger) (*TaskClient, error) 
 // declareQueues declares all required queues
 func (tc *TaskClient) declareQueues() error {
 	queues := []string{
-		"chat_workflow",
-		"events",
+		tc.cfg.CeleryDefaultQueue,
+		tc.cfg.CeleryEventsQueue,
 		"default",
 	}
 
@@ -180,7 +183,7 @@ func (tc *TaskClient) EnqueueChatWorkflow(ctx context.Context, messageID, sessio
 		SessionID: sessionID,
 	}
 
-	return tc.publishTask(ctx, "chat_workflow", TypeChatWorkflow, payload)
+	return tc.publishTask(ctx, tc.cfg.CeleryDefaultQueue, TypeChatWorkflow, payload)
 }
 
 // EnqueueSuggestionWorkflow enqueues a suggestion workflow task
@@ -190,7 +193,7 @@ func (tc *TaskClient) EnqueueSuggestionWorkflow(ctx context.Context, messageID, 
 		SessionID: sessionID,
 	}
 
-	return tc.publishTask(ctx, "chat_workflow", TypeSuggestionWorkflow, payload)
+	return tc.publishTask(ctx, tc.cfg.CeleryDefaultQueue, TypeSuggestionWorkflow, payload)
 }
 
 // EnqueueEventProcessor enqueues an event processor task
@@ -207,7 +210,7 @@ func (tc *TaskClient) EnqueueEventProcessor(ctx context.Context, eventID, eventT
 		payload.ParentID = *parentID
 	}
 
-	return tc.publishTask(ctx, "events", TypeEventProcessor, payload)
+	return tc.publishTask(ctx, tc.cfg.CeleryEventsQueue, TypeEventProcessor, payload)
 }
 
 // PublishEventProcessorTask publishes an event processor task (implements service.TaskClient interface)
@@ -229,7 +232,7 @@ func (tc *TaskClient) EnqueueProcessEvent(ctx context.Context, eventID string, e
 		payload.ParentID = *parentID
 	}
 
-	return tc.publishTask(ctx, "events", TypeProcessEvent, payload)
+	return tc.publishTask(ctx, tc.cfg.CeleryEventsQueue, TypeProcessEvent, payload)
 }
 
 // EnqueueDeliverToProcessor publishes a deliver_to_processor task (matching Python logic)
@@ -240,5 +243,5 @@ func (tc *TaskClient) EnqueueDeliverToProcessor(ctx context.Context, processorID
 		DeliveryID:  deliveryID,
 	}
 
-	return tc.publishTask(ctx, "events", TypeDeliverToProcessor, payload)
+	return tc.publishTask(ctx, tc.cfg.CeleryEventsQueue, TypeDeliverToProcessor, payload)
 }

@@ -61,7 +61,7 @@ func Register(r *gin.Engine, cfg *config.Config, logger *zap.Logger, mongoClient
 	
 	// Initialize task client for event publishing to RabbitMQ
 	rabbitMQURL := cfg.GetRabbitMQURL()
-	taskClient, err := tasks.NewTaskClient(rabbitMQURL, logger)
+	taskClient, err := tasks.NewTaskClient(rabbitMQURL, logger, cfg)
 	if err != nil {
 		logger.Warn("Failed to create task client for API server, events will be processed directly", zap.Error(err))
 		taskClient = nil
