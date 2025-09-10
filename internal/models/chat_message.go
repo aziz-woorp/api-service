@@ -28,12 +28,13 @@ const (
 
 // Attachment represents a file/image attached to a chat message.
 type Attachment struct {
-	FileName string                 `bson:"file_name,omitempty" json:"file_name,omitempty"`
-	FileType string                 `bson:"file_type,omitempty" json:"file_type,omitempty"`
-	FileSize int64                  `bson:"file_size,omitempty" json:"file_size,omitempty"`
-	FileURL  string                 `bson:"file_url,omitempty" json:"file_url,omitempty"`
-	Type     string                 `bson:"type,omitempty" json:"type,omitempty"` // "file", "image", "carousel"
-	Carousel map[string]interface{} `bson:"carousel,omitempty" json:"carousel,omitempty"`
+	FileName string                   `bson:"file_name,omitempty" json:"file_name,omitempty"`
+	FileType string                   `bson:"file_type,omitempty" json:"file_type,omitempty"`
+	FileSize int64                    `bson:"file_size,omitempty" json:"file_size,omitempty"`
+	FileURL  string                   `bson:"file_url,omitempty" json:"file_url,omitempty"`
+	Type     string                   `bson:"type,omitempty" json:"type,omitempty"` // "file", "image", "carousel", "buttons"
+	Carousel map[string]interface{}   `bson:"carousel,omitempty" json:"carousel,omitempty"`
+	Buttons  []map[string]interface{} `bson:"buttons,omitempty" json:"buttons,omitempty"` // For postback/reply buttons
 }
 
 // ChatMessage represents a chat message document in MongoDB.

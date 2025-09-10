@@ -439,23 +439,21 @@ func (s *CSATService) CompleteCSATSurvey(ctx context.Context, sessionID primitiv
 
 // createQuestionMessageStructure creates a chat message structure for CSAT questions without database persistence.
 func (s *CSATService) createQuestionMessageStructure(session *models.CSATSession, question *models.CSATQuestionTemplate) (map[string]interface{}, error) {
-	// Create button attachments for options
+	// Create postback buttons with CSAT payload format
 	buttons := make([]map[string]interface{}, 0)
 	for _, option := range question.Options {
 		button := map[string]interface{}{
-			"text":  option,
-			"value": option,
-			"type":  "button",
+			"type":    "postback",
+			"text":    option,
+			"payload": fmt.Sprintf("csat:%s:%s", question.ID.Hex(), option),
 		}
 		buttons = append(buttons, button)
 	}
 	
+	// Create buttons attachment (not carousel)
 	attachment := map[string]interface{}{
-		"type": "carousel",
-		"carousel": map[string]interface{}{
-			"type":    "buttons",
-			"buttons": buttons,
-		},
+		"type":    "buttons",
+		"buttons": buttons,
 	}
 	
 	// Generate a temporary ID for the message structure
@@ -486,26 +484,24 @@ func (s *CSATService) createQuestionMessageStructure(session *models.CSATSession
 
 // createQuestionMessage creates a chat message for a CSAT question.
 func (s *CSATService) createQuestionMessage(session *models.CSATSession, question *models.CSATQuestionTemplate) (*models.ChatMessage, error) {
-	// Create button attachments for all questions
+	// Create postback buttons with CSAT payload format
 	var attachments []models.Attachment
 	
-	// Create button attachments for options
+	// Create postback buttons for options
 	buttons := make([]map[string]interface{}, 0)
 	for _, option := range question.Options {
 		button := map[string]interface{}{
-			"text":  option,
-			"value": option,
-			"type":  "button",
+			"type":    "postback",
+			"text":    option,
+			"payload": fmt.Sprintf("csat:%s:%s", question.ID.Hex(), option),
 		}
 		buttons = append(buttons, button)
 	}
 	
+	// Create buttons attachment (not carousel)
 	attachment := models.Attachment{
-		Type: "carousel",
-		Carousel: map[string]interface{}{
-			"type":    "buttons",
-			"buttons": buttons,
-		},
+		Type:    "buttons",
+		Buttons: buttons,
 	}
 	attachments = append(attachments, attachment)
 	

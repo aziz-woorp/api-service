@@ -8,7 +8,7 @@ The CSAT system allows you to send sequential customer satisfaction surveys as c
 
 - **Event-driven message delivery** using existing webhook system
 - **Sequential question flow** with proper session management
-- **Button attachments** for rating and multiple-choice questions
+- **Postback button attachments** for rating and multiple-choice questions with CSAT payload format
 - **Client and channel-specific** configurations
 - **Authentication** via existing AuthMiddleware
 - **MongoDB collections** with snake_case naming conventions
@@ -69,6 +69,37 @@ The CSAT system allows you to send sequential customer satisfaction surveys as c
 - ✅ Proper entity type routing for task workers
 - ✅ Complete chat message structure for upstream processing
 - ✅ Prevents session lookup failures
+
+### Button Structure
+
+**CSAT Button Attachments:**
+```json
+{
+  "type": "buttons",
+  "buttons": [
+    {
+      "type": "postback",
+      "text": "5",
+      "payload": "csat:507f1f77bcf86cd799439012:5"
+    },
+    {
+      "type": "postback",
+      "text": "4", 
+      "payload": "csat:507f1f77bcf86cd799439012:4"
+    }
+  ]
+}
+```
+
+**Payload Format:** `csat:<question_id>:<value>`
+- **Prefix**: `csat:` - Identifies CSAT postback for upstream processing
+- **Question ID**: CSAT question template ID for response mapping
+- **Value**: User's selected option value
+
+**Upstream Processing:**
+- Upstream services can detect CSAT payloads by `csat:` prefix
+- Extract question_id and value from payload for automatic response processing
+- Call CSAT response API: `POST /api/v1/csat/respond`
 
 ## API Endpoints
 

@@ -9,8 +9,9 @@ The CSAT (Customer Satisfaction) API provides functionality to trigger and manag
 - **Simplified Trigger API**: Only requires external `session_id`
 - **Flexible Session ID Format**: Supports both simple and thread-appended session IDs
 - **Automatic Resolution**: Resolves client and channel from session
-- **Thread-Aware**: Automatically detects and uses active threads when available
-- **Event-Driven**: Publishes events for integration with external systems
+- **Thread-aware**: Automatically detects and uses active threads when available
+- **Event-driven**: Publishes events for integration with external systems
+- **Postback buttons**: Questions sent with interactive buttons containing CSAT payloads
 
 ## Session ID Formats
 
@@ -261,6 +262,61 @@ The CSAT system publishes events for integration:
   }
 }
 ```
+
+## Button Attachments
+
+### Interactive CSAT Buttons
+
+CSAT questions are sent with interactive postback buttons that contain structured payloads for automatic response processing.
+
+**Button Structure:**
+```json
+{
+  "type": "buttons",
+  "buttons": [
+    {
+      "type": "postback",
+      "text": "5 - Excellent",
+      "payload": "csat:507f1f77bcf86cd799439012:5"
+    },
+    {
+      "type": "postback",
+      "text": "4 - Good",
+      "payload": "csat:507f1f77bcf86cd799439012:4"
+    },
+    {
+      "type": "postback",
+      "text": "3 - Average",
+      "payload": "csat:507f1f77bcf86cd799439012:3"
+    }
+  ]
+}
+```
+
+### Payload Format
+
+**Structure:** `csat:<question_id>:<value>`
+
+- **`csat:`** - Prefix identifying this as a CSAT postback
+- **`<question_id>`** - CSAT question template ID (ObjectID)
+- **`<value>`** - User's selected option value
+
+**Example:** `csat:507f1f77bcf86cd799439012:5`
+
+### Upstream Processing
+
+Upstream services can:
+1. **Detect CSAT payloads** by checking for `csat:` prefix
+2. **Parse payload** to extract question_id and value
+3. **Auto-submit response** by calling:
+   ```bash
+   POST /api/v1/csat/respond
+   {
+     "session_id": "extracted_from_message_context",
+     "csat_question_id": "507f1f77bcf86cd799439012",
+     "response_value": "5"
+   }
+   ```
 
 ## Usage Examples
 
