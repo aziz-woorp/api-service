@@ -18,6 +18,8 @@ type EventPublisherService struct {
 	EventDeliveryTrackingService  *EventDeliveryTrackingService
 	ChatSessionRepo               *repository.ChatSessionRepository
 	ChatMessageRepo               *repository.ChatMessageRepository
+	CSATSessionRepo               *repository.CSATSessionRepository
+	CSATQuestionRepo              *repository.CSATQuestionTemplateRepository
 	TaskClient                    TaskClient // Interface for publishing tasks to RabbitMQ
 }
 
@@ -34,6 +36,8 @@ func NewEventPublisherService(
 	deliveryTrackingService *EventDeliveryTrackingService,
 	chatSessionRepo *repository.ChatSessionRepository,
 	chatMessageRepo *repository.ChatMessageRepository,
+	csatSessionRepo *repository.CSATSessionRepository,
+	csatQuestionRepo *repository.CSATQuestionTemplateRepository,
 	taskClient TaskClient,
 ) *EventPublisherService {
 	return &EventPublisherService{
@@ -42,6 +46,8 @@ func NewEventPublisherService(
 		EventDeliveryTrackingService: deliveryTrackingService,
 		ChatSessionRepo:              chatSessionRepo,
 		ChatMessageRepo:              chatMessageRepo,
+		CSATSessionRepo:              csatSessionRepo,
+		CSATQuestionRepo:             csatQuestionRepo,
 		TaskClient:                   taskClient,
 	}
 }
@@ -379,6 +385,34 @@ func (s *EventPublisherService) getClientIDForEntity(ctx context.Context, entity
 		// This would require additional event lookup logic
 		log.Printf("Client ID resolution for AI service events not yet implemented")
 		return nil, nil
+
+	case models.EntityTypeCSATSession:
+		// Get CSAT session to extract client ID
+		if s.CSATSessionRepo == nil {
+			log.Printf("CSATSessionRepo is nil, cannot resolve client ID for CSAT session")
+			return nil, nil
+		}
+		
+		csatSession, err := s.CSATSessionRepo.GetByID(ctx, objectID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get CSAT session: %w", err)
+		}
+		
+		return &csatSession.Client, nil
+
+	case models.EntityTypeCSATQuestion:
+		// Get CSAT question to extract client ID
+		if s.CSATQuestionRepo == nil {
+			log.Printf("CSATQuestionRepo is nil, cannot resolve client ID for CSAT question")
+			return nil, nil
+		}
+		
+		csatQuestion, err := s.CSATQuestionRepo.GetByID(ctx, objectID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get CSAT question: %w", err)
+		}
+		
+		return &csatQuestion.Client, nil
 
 	default:
 		return nil, fmt.Errorf("unsupported entity type: %s", entityType)

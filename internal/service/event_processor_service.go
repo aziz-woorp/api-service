@@ -172,9 +172,17 @@ func (s *EventProcessorService) processAMQP(
 	startTime := time.Now()
 
 	// Prepare connection URL
+	var username, password string
+	if amqpConfig.Username != nil {
+		username = *amqpConfig.Username
+	}
+	if amqpConfig.Password != nil {
+		password = *amqpConfig.Password
+	}
+	
 	connURL := fmt.Sprintf("amqp://%s:%s@%s:%d%s",
-		amqpConfig.Username,
-		amqpConfig.Password,
+		username,
+		password,
 		amqpConfig.Host,
 		amqpConfig.Port,
 		amqpConfig.VHost,

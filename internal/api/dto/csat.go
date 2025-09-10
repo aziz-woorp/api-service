@@ -8,9 +8,7 @@ import (
 
 // CSATTriggerRequest represents a request to trigger a CSAT survey.
 type CSATTriggerRequest struct {
-	ChatSessionID string `json:"chat_session_id" validate:"required"`
-	ClientID      string `json:"client_id" validate:"required"`
-	ChannelID     string `json:"channel_id" validate:"required"`
+	SessionID string `json:"session_id" validate:"required"`
 }
 
 // CSATTriggerResponse represents a response after triggering a CSAT survey.
@@ -23,9 +21,9 @@ type CSATTriggerResponse struct {
 
 // CSATResponseRequest represents a request to respond to a CSAT question.
 type CSATResponseRequest struct {
-	CSATSessionID string `json:"csat_session_id" validate:"required"`
-	QuestionID    string `json:"question_id" validate:"required"`
-	ResponseValue string `json:"response_value" validate:"required"`
+	SessionID        string `json:"session_id" validate:"required"`
+	CSATQuestionID   string `json:"csat_question_id" validate:"required"`
+	ResponseValue    string `json:"response_value" validate:"required"`
 }
 
 // CSATResponseResponse represents a response after submitting a CSAT response.
@@ -84,6 +82,8 @@ type CSATSessionResponse struct {
 	ChatSessionID        string     `json:"chat_session_id"`
 	ClientID             string     `json:"client_id"`
 	ChannelID            string     `json:"channel_id"`
+	ThreadSessionID      *string    `json:"thread_session_id,omitempty"`
+	ThreadContext        bool       `json:"thread_context"`
 	Status               string     `json:"status"`
 	TriggeredAt          time.Time  `json:"triggered_at"`
 	CompletedAt          *time.Time `json:"completed_at,omitempty"`

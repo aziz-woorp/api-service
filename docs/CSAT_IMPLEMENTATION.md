@@ -12,6 +12,7 @@ The CSAT system allows you to send sequential customer satisfaction surveys as c
 - **Client and channel-specific** configurations
 - **Authentication** via existing AuthMiddleware
 - **MongoDB collections** with snake_case naming conventions
+- **No database pollution** - CSAT messages sent as event payloads, not stored as chat messages
 
 ## Architecture
 
@@ -34,9 +35,40 @@ The CSAT system allows you to send sequential customer satisfaction surveys as c
 
 ### Event Types
 
-- `csat.triggered` - CSAT survey initiated
-- `csat.message.sent` - CSAT question sent as chat message
-- `csat.completed` - CSAT survey completed
+- `csat_triggered` - CSAT survey initiated (entity_type: `csat_session`)
+- `csat_message_sent` - CSAT question sent as structured payload (entity_type: `csat_question`)
+- `csat_completed` - CSAT survey completed (entity_type: `csat_session`)
+
+### Event Structure
+
+**CSAT Message Sent Event:**
+```json
+{
+  "event_type": "csat_message_sent",
+  "entity_type": "csat_question",
+  "entity_id": "question_template_id",
+  "data": {
+    "csat_session_id": "session_id",
+    "question_id": "question_template_id",
+    "chat_session_id": "chat_session_id",
+    "message_type": "question",
+    "chat_message": {
+      "id": "temp_generated_id",
+      "sender": "system",
+      "sender_name": "CSAT Survey",
+      "text": "How would you rate your experience?",
+      "attachments": [...],
+      "data": {...}
+    }
+  }
+}
+```
+
+**Benefits:**
+- ✅ No database chat message records created
+- ✅ Proper entity type routing for task workers
+- ✅ Complete chat message structure for upstream processing
+- ✅ Prevents session lookup failures
 
 ## API Endpoints
 
@@ -56,6 +88,47 @@ PUT /clients/:client_id/channels/:channel_id/csat/config
 GET /clients/:client_id/channels/:channel_id/csat/questions
 PUT /clients/:client_id/channels/:channel_id/csat/questions
 ```
+
+## Enhanced Response Behavior
+
+### Smart Question Flow Management
+
+The CSAT system implements intelligent response handling to prevent duplicate questions:
+
+**New Response Behavior:**
+- Creates new `CSATResponse` record
+- Advances `CurrentQuestionIndex` in CSAT session
+- Automatically sends next question in sequence (by `order` field)
+- Progresses survey flow naturally
+
+**Update Response Behavior:**
+- Updates existing `CSATResponse.response_value`
+- Does NOT advance question index
+- Does NOT send duplicate questions
+- Allows users to change answers without spam
+
+**Implementation Logic:**
+```go
+// Check if response exists
+existingResponse := GetBySessionAndQuestion(csatSessionID, questionID)
+if existingResponse != nil {
+    // UPDATE: Just update response value, no next question
+    existingResponse.ResponseValue = newValue
+    Update(existingResponse)
+    return responseID // Exit early
+} else {
+    // NEW: Create response AND send next question
+    CreateResponse(newResponse)
+    AdvanceQuestionIndex()
+    SendNextQuestion() // Only for new responses
+}
+```
+
+**Benefits:**
+- ✅ Prevents question spam when users change answers
+- ✅ Maintains proper survey progression for new responses
+- ✅ Supports multiple calls to same question safely
+- ✅ Preserves question ordering by `order` field
 
 ## Usage Examples
 

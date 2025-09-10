@@ -60,9 +60,9 @@ const (
 	EventTypeAIResponseReceived EventType = "ai_response_received"
 
 	// CSAT Events
-	EventTypeCSATTriggered    EventType = "csat.triggered"
-	EventTypeCSATMessageSent  EventType = "csat.message.sent"
-	EventTypeCSATCompleted    EventType = "csat.completed"
+	EventTypeCSATTriggered    EventType = "csat_triggered"
+	EventTypeCSATMessageSent  EventType = "csat_message_sent"
+	EventTypeCSATCompleted    EventType = "csat_completed"
 )
 
 // EntityType represents the type of entity in events

@@ -43,7 +43,25 @@ func (r *ChatSessionRepository) GetByID(ctx context.Context, id primitive.Object
 
 func (r *ChatSessionRepository) GetBySessionID(ctx context.Context, sessionID string) (*models.ChatSession, error) {
 	var session models.ChatSession
+	
+	// First try exact match
 	err := r.Collection.FindOne(ctx, bson.M{"session_id": sessionID}).Decode(&session)
+	if err == nil {
+		return &session, nil
+	}
+	
+	// If exact match fails, try startsWith query to handle thread-appended session IDs
+	// e.g., session_123 should match session_123_thread_456
+	filter := bson.M{
+		"session_id": bson.M{
+			"$regex":   "^" + sessionID,
+			"$options": "i", // case insensitive
+		},
+	}
+	
+	// Sort by updated_at desc to get the most recent session if multiple matches
+	opts := options.FindOne().SetSort(bson.D{{"updated_at", -1}})
+	err = r.Collection.FindOne(ctx, filter, opts).Decode(&session)
 	if err != nil {
 		return nil, err
 	}

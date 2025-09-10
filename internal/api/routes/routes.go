@@ -67,7 +67,7 @@ func Register(r *gin.Engine, cfg *config.Config, logger *zap.Logger, mongoClient
 		taskClient = nil
 	}
 	
-	eventPublisherService := service.NewEventPublisherService(eventService, eventProcessorConfigService, eventDeliveryTrackingService, chatSessionRepo, chatMsgRepo, taskClient)
+	eventPublisherService := service.NewEventPublisherService(eventService, eventProcessorConfigService, eventDeliveryTrackingService, chatSessionRepo, chatMsgRepo, nil, nil, taskClient)
 	
 	// Initialize PayloadService
 	payloadService := service.NewPayloadService(nil, chatSessionService) // ChatMessageService will be set later
@@ -163,8 +163,8 @@ func Register(r *gin.Engine, cfg *config.Config, logger *zap.Logger, mongoClient
 	csatSessionRepo := repository.NewCSATSessionRepository(db)
 	csatResponseRepo := repository.NewCSATResponseRepository(db)
 	
-	// CSAT Event Publisher Service - reuse existing services
-	csatEventPublisherService := service.NewEventPublisherService(eventService, eventProcessorConfigService, eventDeliveryTrackingService, chatSessionRepo, chatMsgRepo, nil)
+	// CSAT Event Publisher Service - with CSAT repositories for proper client resolution
+	csatEventPublisherService := service.NewEventPublisherService(eventService, eventProcessorConfigService, eventDeliveryTrackingService, chatSessionRepo, chatMsgRepo, csatSessionRepo, csatQuestionRepo, taskClient)
 	
 	csatService := service.NewCSATService(
 		csatConfigRepo,
@@ -172,7 +172,10 @@ func Register(r *gin.Engine, cfg *config.Config, logger *zap.Logger, mongoClient
 		csatSessionRepo,
 		csatResponseRepo,
 		chatMsgRepo,
+		chatSessionRepo,
+		chatSessionThreadService,
 		csatEventPublisherService,
+		payloadService,
 	)
 	csatHandler := handlers.NewCSATHandler(csatService)
 

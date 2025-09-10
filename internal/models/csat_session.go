@@ -13,6 +13,8 @@ type CSATSession struct {
 	ChatSessionID        string               `bson:"chat_session_id" json:"chat_session_id" validate:"required"`
 	Client               primitive.ObjectID   `bson:"client" json:"client" validate:"required"`
 	ClientChannel        primitive.ObjectID   `bson:"client_channel" json:"client_channel" validate:"required"`
+	ThreadSessionID      *string              `bson:"thread_session_id,omitempty" json:"thread_session_id,omitempty"`
+	ThreadContext        bool                 `bson:"thread_context" json:"thread_context"`
 	Status               string               `bson:"status" json:"status"` // "pending", "in_progress", "completed", "abandoned"
 	TriggeredAt          time.Time            `bson:"triggered_at" json:"triggered_at"`
 	CompletedAt          *time.Time           `bson:"completed_at,omitempty" json:"completed_at,omitempty"`

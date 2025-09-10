@@ -32,21 +32,8 @@ func (h *CSATHandler) TriggerCSAT(c *gin.Context) {
 		return
 	}
 
-	// Parse client and channel IDs
-	clientID, err := primitive.ObjectIDFromHex(req.ClientID)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid client_id"})
-		return
-	}
-
-	channelID, err := primitive.ObjectIDFromHex(req.ChannelID)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid channel_id"})
-		return
-	}
-
-	// Trigger CSAT survey
-	session, err := h.CSATService.TriggerCSATSurvey(c.Request.Context(), req.ChatSessionID, clientID, channelID)
+	// Trigger CSAT survey using external session_id
+	session, err := h.CSATService.TriggerCSATSurveyBySessionID(c.Request.Context(), req.SessionID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -70,29 +57,17 @@ func (h *CSATHandler) RespondToCSAT(c *gin.Context) {
 		return
 	}
 
-	// Parse session and question IDs
-	sessionID, err := primitive.ObjectIDFromHex(req.CSATSessionID)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid csat_session_id"})
-		return
-	}
-
-	questionID, err := primitive.ObjectIDFromHex(req.QuestionID)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid question_id"})
-		return
-	}
-
-	// Process response
-	err = h.CSATService.ProcessResponse(c.Request.Context(), sessionID, questionID, req.ResponseValue)
+	// Process response using external session_id
+	responseID, err := h.CSATService.ProcessResponseBySessionID(c.Request.Context(), req.SessionID, req.CSATQuestionID, req.ResponseValue)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
 	response := dto.CSATResponseResponse{
-		Status:  "success",
-		Message: "Response recorded successfully",
+		ResponseID: responseID,
+		Status:     "success",
+		Message:    "Response recorded successfully",
 	}
 
 	c.JSON(http.StatusOK, response)
@@ -302,6 +277,8 @@ func (h *CSATHandler) GetCSATSession(c *gin.Context) {
 		ChatSessionID:        session.ChatSessionID,
 		ClientID:             session.Client.Hex(),
 		ChannelID:            session.ClientChannel.Hex(),
+		ThreadSessionID:      session.ThreadSessionID,
+		ThreadContext:        session.ThreadContext,
 		Status:               session.Status,
 		TriggeredAt:          session.TriggeredAt,
 		CompletedAt:          session.CompletedAt,

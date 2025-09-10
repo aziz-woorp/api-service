@@ -128,7 +128,7 @@ func runWorker(cfg *config.Config, logger *zap.Logger, mongoClient *mongo.Client
 	}
 	defer taskClient.Close()
 	
-	eventPublisherService := service.NewEventPublisherService(eventService, eventProcessorConfigService, eventDeliveryTrackingService, chatSessionRepo, chatMessageRepo, taskClient)
+	eventPublisherService := service.NewEventPublisherService(eventService, eventProcessorConfigService, eventDeliveryTrackingService, chatSessionRepo, chatMessageRepo, nil, nil, taskClient)
 	
 	// Initialize services needed for PayloadService
 	chatSessionService := service.NewChatSessionService(chatSessionRepo)

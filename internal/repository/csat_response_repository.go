@@ -62,6 +62,24 @@ func (r *CSATResponseRepository) GetBySessionID(ctx context.Context, sessionID p
 	return responses, nil
 }
 
+// GetBySessionAndQuestion retrieves a CSAT response for a specific session and question.
+func (r *CSATResponseRepository) GetBySessionAndQuestion(ctx context.Context, sessionID, questionID primitive.ObjectID) (*models.CSATResponse, error) {
+	var response models.CSATResponse
+	filter := bson.M{
+		"csat_session":      sessionID,
+		"question_template": questionID,
+	}
+	
+	err := r.collection.FindOne(ctx, filter).Decode(&response)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return nil, fmt.Errorf("CSAT response not found for session and question")
+		}
+		return nil, fmt.Errorf("failed to get CSAT response: %w", err)
+	}
+	return &response, nil
+}
+
 // Update updates a CSAT response.
 func (r *CSATResponseRepository) Update(ctx context.Context, response *models.CSATResponse) error {
 	response.BeforeUpdate()

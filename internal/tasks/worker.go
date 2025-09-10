@@ -1005,6 +1005,40 @@ func (tw *TaskWorker) getClientIDForEntity(ctx context.Context, entityType, enti
 		
 		return "", fmt.Errorf("could not determine client_id for AI service entity")
 
+	case string(models.EntityTypeCSATSession):
+		// Direct client ID from CSAT session
+		csatSession, err := tw.databaseService.GetCSATSession(ctx, entityID)
+		if err != nil {
+			tw.logger.Error("Failed to get CSAT session for client resolution", 
+				zap.String("entity_id", entityID), zap.Error(err))
+			return "", fmt.Errorf("failed to get CSAT session: %w", err)
+		}
+		
+		return csatSession.Client.Hex(), nil
+
+	case string(models.EntityTypeCSATQuestion):
+		// Direct client ID from CSAT question template
+		csatQuestion, err := tw.databaseService.GetCSATQuestion(ctx, entityID)
+		if err != nil {
+			tw.logger.Error("Failed to get CSAT question for client resolution", 
+				zap.String("entity_id", entityID), zap.Error(err))
+			return "", fmt.Errorf("failed to get CSAT question: %w", err)
+		}
+		
+		return csatQuestion.Client.Hex(), nil
+
+	case string(models.EntityTypeCSATResponse):
+		// Get CSAT response, then get session to find client
+		csatResponse, err := tw.databaseService.GetCSATResponse(ctx, entityID)
+		if err != nil {
+			tw.logger.Error("Failed to get CSAT response for client resolution", 
+				zap.String("entity_id", entityID), zap.Error(err))
+			return "", fmt.Errorf("failed to get CSAT response: %w", err)
+		}
+		
+		// Recursively resolve client ID through CSAT session
+		return tw.getClientIDForEntity(ctx, string(models.EntityTypeCSATSession), csatResponse.CSATSession.Hex())
+
 	default:
 		return "", fmt.Errorf("unsupported entity type: %s", entityType)
 	}

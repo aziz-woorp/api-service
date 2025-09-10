@@ -214,6 +214,72 @@ func (db *DatabaseService) GetSessionContext(ctx context.Context, sessionID stri
 	return context, nil
 }
 
+// GetCSATSession retrieves a CSAT session by ID
+func (db *DatabaseService) GetCSATSession(ctx context.Context, sessionID string) (*models.CSATSession, error) {
+	collection := db.database.Collection("csat_sessions")
+	
+	// Convert sessionID string to ObjectID
+	objectID, err := primitive.ObjectIDFromHex(sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid CSAT session ID format: %s", sessionID)
+	}
+	
+	var session models.CSATSession
+	err = collection.FindOne(ctx, bson.M{"_id": objectID}).Decode(&session)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return nil, fmt.Errorf("CSAT session not found: %s", sessionID)
+		}
+		return nil, fmt.Errorf("failed to get CSAT session: %w", err)
+	}
+	
+	return &session, nil
+}
+
+// GetCSATQuestion retrieves a CSAT question template by ID
+func (db *DatabaseService) GetCSATQuestion(ctx context.Context, questionID string) (*models.CSATQuestionTemplate, error) {
+	collection := db.database.Collection("csat_question_templates")
+	
+	// Convert questionID string to ObjectID
+	objectID, err := primitive.ObjectIDFromHex(questionID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid CSAT question ID format: %s", questionID)
+	}
+	
+	var question models.CSATQuestionTemplate
+	err = collection.FindOne(ctx, bson.M{"_id": objectID}).Decode(&question)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return nil, fmt.Errorf("CSAT question not found: %s", questionID)
+		}
+		return nil, fmt.Errorf("failed to get CSAT question: %w", err)
+	}
+	
+	return &question, nil
+}
+
+// GetCSATResponse retrieves a CSAT response by ID
+func (db *DatabaseService) GetCSATResponse(ctx context.Context, responseID string) (*models.CSATResponse, error) {
+	collection := db.database.Collection("csat_responses")
+	
+	// Convert responseID string to ObjectID
+	objectID, err := primitive.ObjectIDFromHex(responseID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid CSAT response ID format: %s", responseID)
+	}
+	
+	var response models.CSATResponse
+	err = collection.FindOne(ctx, bson.M{"_id": objectID}).Decode(&response)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return nil, fmt.Errorf("CSAT response not found: %s", responseID)
+		}
+		return nil, fmt.Errorf("failed to get CSAT response: %w", err)
+	}
+	
+	return &response, nil
+}
+
 // HealthCheck performs a basic health check on the database connection
 func (db *DatabaseService) HealthCheck(ctx context.Context) error {
 	return db.mongoClient.Ping(ctx, nil)
