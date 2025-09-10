@@ -128,17 +128,20 @@ func runWorker(cfg *config.Config, logger *zap.Logger, mongoClient *mongo.Client
 	}
 	defer taskClient.Close()
 	
-	eventPublisherService := service.NewEventPublisherService(eventService, eventProcessorConfigService, eventDeliveryTrackingService, chatSessionRepo, chatMessageRepo, nil, nil, taskClient)
-	
-	// Initialize services needed for PayloadService
+	// Initialize services needed for PayloadService first
 	chatSessionService := service.NewChatSessionService(chatSessionRepo)
-	chatMessageService := service.NewChatMessageService(chatMessageRepo, eventPublisherService, nil) // PayloadService will be set later
 	
-	// Initialize PayloadService
-	payloadService := service.NewPayloadService(chatMessageService, chatSessionService)
+	// Initialize PayloadService with ThreadManagerService from ChatSessionService
+	payloadService := service.NewPayloadService(nil, chatSessionService, chatSessionService.ThreadManager) // ChatMessageService will be set later
 	
-	// Update ChatMessageService with PayloadService
-	chatMessageService.PayloadService = payloadService
+	// Initialize EventPublisherService with PayloadService
+	eventPublisherService := service.NewEventPublisherService(eventService, eventProcessorConfigService, eventDeliveryTrackingService, chatSessionRepo, chatMessageRepo, nil, nil, payloadService, taskClient)
+	
+	// Initialize ChatMessageService with EventPublisherService and PayloadService
+	chatMessageService := service.NewChatMessageService(chatMessageRepo, eventPublisherService, payloadService)
+	
+	// Update PayloadService with ChatMessageService to complete the circular dependency
+	payloadService.ChatMessageService = chatMessageService
 	
 	// Initialize task worker
 	taskWorker, err := tasks.NewTaskWorker(rabbitMQURL, logger, cfg.AIServiceURL, cfg.SlackAIToken, databaseService, eventPublisherService, payloadService, chatMessageService, cfg)

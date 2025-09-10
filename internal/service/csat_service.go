@@ -297,8 +297,10 @@ func (s *CSATService) ProcessResponseBySessionID(ctx context.Context, sessionID,
 		return "", fmt.Errorf("failed to find chat session with session_id %s: %w", baseSessionID, err)
 	}
 	
-	// 3. Find active CSAT session for this chat session
-	csatSession, err := s.CSATSessionRepo.GetActiveByChatSessionID(ctx, sessionID)
+	// 3. Find active CSAT session for this chat session using base session ID
+	// This handles threaded sessions where CSAT session has chat_session_id like "base#thread"
+	// but external systems send back normalized "base" session ID
+	csatSession, err := s.CSATSessionRepo.GetActiveByBaseSessionID(ctx, baseSessionID)
 	if err != nil {
 		return "", fmt.Errorf("no active CSAT session found for session_id %s: %w", sessionID, err)
 	}

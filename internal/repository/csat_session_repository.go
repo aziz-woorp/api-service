@@ -9,6 +9,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 // CSATSessionRepository encapsulates database operations for CSAT sessions.
@@ -117,6 +118,35 @@ func (r *CSATSessionRepository) GetActiveByChatSessionID(ctx context.Context, ch
 			return nil, fmt.Errorf("active CSAT session not found")
 		}
 		return nil, fmt.Errorf("failed to get active CSAT session: %w", err)
+	}
+	return &session, nil
+}
+
+// GetActiveByBaseSessionID retrieves an active CSAT session by base session ID.
+// This handles threaded sessions where the stored chat_session_id might be "base#thread"
+// but the lookup is done with just "base".
+func (r *CSATSessionRepository) GetActiveByBaseSessionID(ctx context.Context, baseSessionID string) (*models.CSATSession, error) {
+	var session models.CSATSession
+	
+	// Use regex to find sessions where chat_session_id starts with baseSessionID
+	// This handles both exact matches and threaded sessions (base#thread)
+	filter := bson.M{
+		"chat_session_id": bson.M{
+			"$regex":   "^" + baseSessionID + "(#.*)?$",
+			"$options": "i", // case insensitive
+		},
+		"status": bson.M{"$in": []string{"pending", "in_progress"}},
+	}
+	
+	// Sort by created_at descending to get the most recent session
+	opts := options.FindOne().SetSort(bson.D{{"created_at", -1}})
+	
+	err := r.collection.FindOne(ctx, filter, opts).Decode(&session)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return nil, fmt.Errorf("active CSAT session not found for base session %s", baseSessionID)
+		}
+		return nil, fmt.Errorf("failed to get active CSAT session by base session ID: %w", err)
 	}
 	return &session, nil
 }

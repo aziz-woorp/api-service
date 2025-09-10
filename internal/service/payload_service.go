@@ -13,13 +13,15 @@ import (
 type PayloadService struct {
 	ChatMessageService *ChatMessageService
 	ChatSessionService *ChatSessionService
+	ThreadManagerService *ThreadManagerService
 }
 
 // NewPayloadService creates a new PayloadService instance
-func NewPayloadService(chatMessageService *ChatMessageService, chatSessionService *ChatSessionService) *PayloadService {
+func NewPayloadService(chatMessageService *ChatMessageService, chatSessionService *ChatSessionService, threadManagerService *ThreadManagerService) *PayloadService {
 	return &PayloadService{
 		ChatMessageService: chatMessageService,
 		ChatSessionService: chatSessionService,
+		ThreadManagerService: threadManagerService,
 	}
 }
 
@@ -157,26 +159,74 @@ func (ps *PayloadService) CreateChatSuggestionPayload(ctx context.Context, sugge
 }
 
 // normalizeSessionID normalizes session ID for threading support
-// This is a simplified version - should be expanded to match Python threading logic
+// Matches Python PayloadService.normalize_session_id() implementation
 func (ps *PayloadService) normalizeSessionID(sessionID string) string {
-	// TODO: Implement threading support similar to Python ThreadManager
-	// For now, return the session ID as-is
+	if sessionID == "" {
+		return sessionID
+	}
+
+	// Use ThreadManagerService to parse session ID and get base session ID
+	if ps.ThreadManagerService != nil {
+		// Parse session ID to check if it has thread component
+		baseSessionID, threadID := ps.ThreadManagerService.ParseSessionID(sessionID)
+		
+		// If there's a thread component, we need to verify threading is enabled
+		if threadID != "" {
+			// Check if threading is enabled for this session
+			// Note: In a production environment, you might want to cache this lookup
+			if threadingEnabled, err := ps.ThreadManagerService.IsThreadingEnabledForSession(context.Background(), baseSessionID); err == nil && threadingEnabled {
+				// Threading is enabled and session has thread component, return normalized ID
+				return baseSessionID
+			}
+		}
+		
+		// If no thread component or threading not enabled, return base session ID anyway
+		// This ensures consistency - we always return the base session ID for events
+		return baseSessionID
+	}
+
+	// Fallback: if no ThreadManagerService available, return original session ID
 	return sessionID
 }
 
 // PrepareEventData prepares event data with normalized session IDs
+// Recursively normalizes session_id and chat_session_id fields in nested objects
 func (ps *PayloadService) PrepareEventData(data map[string]interface{}) map[string]interface{} {
-	result := make(map[string]interface{})
-	for k, v := range data {
-		if k == "session_id" {
-			if sessionID, ok := v.(string); ok {
-				result[k] = ps.normalizeSessionID(sessionID)
-			} else {
-				result[k] = v
-			}
-		} else {
-			result[k] = v
-		}
+	result := ps.normalizeEventDataRecursive(data)
+	if normalized, ok := result.(map[string]interface{}); ok {
+		return normalized
 	}
-	return result
+	// Fallback to original data if type assertion fails
+	return data
+}
+
+// normalizeEventDataRecursive recursively normalizes session IDs in event data
+func (ps *PayloadService) normalizeEventDataRecursive(data interface{}) interface{} {
+	switch v := data.(type) {
+	case map[string]interface{}:
+		result := make(map[string]interface{})
+		for k, val := range v {
+			if k == "session_id" || k == "chat_session_id" {
+				if sessionID, ok := val.(string); ok {
+					result[k] = ps.normalizeSessionID(sessionID)
+				} else {
+					result[k] = val
+				}
+			} else {
+				// Recursively process nested objects
+				result[k] = ps.normalizeEventDataRecursive(val)
+			}
+		}
+		return result
+	case []interface{}:
+		// Handle arrays by processing each element
+		result := make([]interface{}, len(v))
+		for i, item := range v {
+			result[i] = ps.normalizeEventDataRecursive(item)
+		}
+		return result
+	default:
+		// Return primitive values as-is
+		return data
+	}
 }

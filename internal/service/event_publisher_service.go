@@ -20,6 +20,7 @@ type EventPublisherService struct {
 	ChatMessageRepo               *repository.ChatMessageRepository
 	CSATSessionRepo               *repository.CSATSessionRepository
 	CSATQuestionRepo              *repository.CSATQuestionTemplateRepository
+	PayloadService                *PayloadService // For session ID normalization
 	TaskClient                    TaskClient // Interface for publishing tasks to RabbitMQ
 }
 
@@ -38,6 +39,7 @@ func NewEventPublisherService(
 	chatMessageRepo *repository.ChatMessageRepository,
 	csatSessionRepo *repository.CSATSessionRepository,
 	csatQuestionRepo *repository.CSATQuestionTemplateRepository,
+	payloadService *PayloadService,
 	taskClient TaskClient,
 ) *EventPublisherService {
 	return &EventPublisherService{
@@ -48,6 +50,7 @@ func NewEventPublisherService(
 		ChatMessageRepo:              chatMessageRepo,
 		CSATSessionRepo:              csatSessionRepo,
 		CSATQuestionRepo:             csatQuestionRepo,
+		PayloadService:               payloadService,
 		TaskClient:                   taskClient,
 	}
 }
@@ -61,6 +64,12 @@ func (s *EventPublisherService) PublishEvent(
 	parentID *string,
 	data map[string]interface{},
 ) (*models.Event, error) {
+	// Normalize session IDs in event data for threading support
+	normalizedData := data
+	if s.PayloadService != nil {
+		normalizedData = s.PayloadService.PrepareEventData(data)
+	}
+
 	// Create and save the event
 	event, err := s.EventService.CreateEvent(
 		ctx,
@@ -68,7 +77,7 @@ func (s *EventPublisherService) PublishEvent(
 		entityType,
 		entityID,
 		parentID,
-		data,
+		normalizedData,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create event: %w", err)
